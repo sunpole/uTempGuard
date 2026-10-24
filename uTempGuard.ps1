@@ -11,6 +11,7 @@ Set-StrictMode -Version 2.0
 if ([string]::IsNullOrWhiteSpace($ConfigPath)) { $ConfigPath=Join-Path $PSScriptRoot 'config.json' }
 Import-Module (Join-Path $PSScriptRoot 'src\Guard.Core.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'src\Guard.Sensor.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'src\Guard.Overlay.psm1') -Force
 $DataDirectory = [IO.Path]::GetFullPath($DataDirectory).TrimEnd('\')
 [IO.Directory]::CreateDirectory($DataDirectory) | Out-Null
 $statusPath = Join-Path $DataDirectory 'status.json'
@@ -25,6 +26,9 @@ $script:clock = [Diagnostics.Stopwatch]::StartNew()
 $script:context = @{}
 $script:state = 'Normal'
 $script:lastSample = $null
+$script:lastDecision = $null
+$script:overlaySettingsPath = Join-Path $DataDirectory 'overlay.json'
+$script:overlaySettings = $null
 $script:count = 0
 $mutex = $null
 $ownsMutex = $false
@@ -140,17 +144,8 @@ function Invoke-GuardIntent {
         } catch { Write-GuardEvent 'ActionError' @{Message=$_.Exception.Message} }
     }
 }
-function Update-GuardDisplay {
-    param([object]$Sample, [object]$Decision)
-    if ($null -eq $script:form) { return }
-    $suffix = if ($SimulationPath) {'ИМИТАЦИЯ'} elseif ($config.Mode -eq 'Observe') {'НАБЛЮДЕНИЕ'} elseif (Test-LiveApproval) {'БОЕВОЙ РЕЖИМ'} else {'ДЕЙСТВИЯ ЗАБЛОКИРОВАНЫ'}
-    if (-not $Sample.Healthy) { $script:label.Text = "CPU: нет достоверных данных`r`n$suffix | ДАТЧИК НЕДОСТУПЕН"; $script:form.BackColor=[Drawing.Color]::FromArgb(120,60,0) }
-    else {
-        $script:label.Text = ('CPU Package: {0:N0} °C' -f $Sample.TemperatureC)+"`r`n$suffix | $($Decision.State)"
-        $script:form.BackColor = switch ($Decision.State) {'Critical' {[Drawing.Color]::DarkRed} 'Warning' {[Drawing.Color]::DarkOrange} default {[Drawing.Color]::FromArgb(15,65,40)}}
-    }
-    $script:tray.Text = $script:label.Text.Replace("`r`n",' | ').Substring(0,[math]::Min(63,$script:label.Text.Replace("`r`n",' | ').Length))
-}
+. (Join-Path $PSScriptRoot 'src\Guard.OverlayUI.ps1')
+
 try {
     $config = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($config.Mode -notin @('Observe','Live') -or $config.PollSeconds -lt 1 -or $config.PollSeconds -gt 30 -or $config.MaxAgeSeconds -lt 3 -or $config.MaxAgeSeconds -gt 30 -or $config.CpuThresholdPercent -ne 30) { throw 'Invalid configuration: Mode, poll, freshness, CPU threshold.' }
@@ -169,24 +164,8 @@ try {
     if (Test-Path -LiteralPath $stopPath) { Remove-Item -LiteralPath $stopPath }
     $simulation = @()
     if ($SimulationPath) { $simulation = Get-Content -LiteralPath $SimulationPath -Raw | ConvertFrom-Json; if ($simulation.Count -eq 0) { throw 'Empty simulation.' } }
-    if (-not $Headless) {
-        Add-Type -AssemblyName System.Windows.Forms
-        Add-Type -AssemblyName System.Drawing
-        [Windows.Forms.Application]::EnableVisualStyles()
-        $script:form = [Windows.Forms.Form]::new()
-        $script:form.Text='uTempGuard'; $script:form.FormBorderStyle='None'; $script:form.TopMost=$true; $script:form.ShowInTaskbar=$false
-        $script:form.Size=[Drawing.Size]::new(350,76); $script:form.StartPosition='Manual'
-        $area=[Windows.Forms.Screen]::PrimaryScreen.WorkingArea
-        $script:form.Location=[Drawing.Point]::new(($area.Right-$script:form.Width-$config.Overlay.MarginX),($area.Top+$config.Overlay.MarginY))
-        $script:label=[Windows.Forms.Label]::new(); $script:label.Dock='Fill'; $script:label.ForeColor=[Drawing.Color]::White; $script:label.Font=[Drawing.Font]::new('Segoe UI',12); $script:label.TextAlign='MiddleCenter'
-        $script:form.Controls.Add($script:label)
-        $menu=[Windows.Forms.ContextMenuStrip]::new()
-        $stopItem=$menu.Items.Add('Остановить uTempGuard')
-        $stopItem.add_Click({[IO.File]::WriteAllText($stopPath,'stop')})
-        $script:form.ContextMenuStrip=$menu
-        $script:tray=[Windows.Forms.NotifyIcon]::new(); $script:tray.Icon=[Drawing.SystemIcons]::Information; $script:tray.ContextMenuStrip=$menu; $script:tray.Visible=$true; $script:tray.Text='uTempGuard'
-        if ($config.Overlay.Enabled) { $script:form.Show() }
-    }
+    $script:overlaySettings = Get-GuardOverlaySettings -Path $script:overlaySettingsPath
+    if (-not $Headless) { Initialize-GuardOverlay }
     $running=$true
     Write-GuardEvent 'Started' @{Version=$config.Version;Mode=$config.Mode;Simulation=[bool]$SimulationPath;LogicalProcessors=$logicalCount;ConfigPath=$ConfigPath;LiveApproved=(Test-LiveApproval)}
     $nextTick=0.0
@@ -205,7 +184,7 @@ try {
             $candidates=@(Get-GuardCandidates)
         }
         $decision=Get-GuardDecision -Temperature $script:lastSample.TemperatureC -SensorHealthy $script:lastSample.Healthy -PreviousState $script:state -WarningC $config.WarningC -ResumeBelowC $config.ResumeBelowC -ShutdownC $config.ShutdownC
-        $script:state=$decision.State; $script:count++
+        $script:state=$decision.State; $script:lastDecision=$decision; $script:count++
         if ($previousState -ne $script:state -or $script:count -eq 1) { Write-GuardEvent 'StateChanged' @{From=$previousState;To=$script:state;TemperatureC=$script:lastSample.TemperatureC;Error=$script:lastSample.Error} }
         if ($script:state -ne 'Normal') { Show-GuardNotice $(if ($script:state -eq 'SensorFault') {'Нет достоверных данных CPU. Защитные действия заблокированы.'} else {"Температура CPU $($script:lastSample.TemperatureC) °C. Режим: $($config.Mode)."}) }
         Invoke-GuardIntent -Decision $decision -Candidates $candidates
