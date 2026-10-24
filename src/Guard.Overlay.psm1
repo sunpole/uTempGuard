@@ -6,7 +6,7 @@ function Get-GuardOverlaySettings {
         Style = 'Compact'
         FontSize = 11
         Opacity = 90
-        ShowBackground = $true
+        ShowBackground = $false
         Position = 'TopRight'
         Visible = $true
     }
