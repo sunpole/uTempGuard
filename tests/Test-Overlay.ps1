@@ -4,7 +4,7 @@ Import-Module (Join-Path $PSScriptRoot '..\src\Guard.Overlay.psm1') -Force
 $folder = Join-Path $PSScriptRoot ('..\artifacts\overlay-test-' + [guid]::NewGuid().ToString('N'))
 $path = Join-Path $folder 'overlay.json'
 $defaults = Get-GuardOverlaySettings -Path $path
-if ($defaults.Style -ne 'Compact' -or $defaults.FontSize -ne 11 -or $defaults.Opacity -ne 90 -or -not $defaults.ShowBackground) { throw 'Bad overlay defaults' }
+if ($defaults.Style -ne 'Compact' -or $defaults.FontSize -ne 11 -or $defaults.Opacity -ne 90 -or $defaults.ShowBackground) { throw 'Bad overlay defaults' }
 $defaults.Style = 'Full'
 $defaults.FontSize = 16
 $defaults.Opacity = 80
