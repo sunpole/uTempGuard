@@ -1,0 +1,12 @@
+[
+  {"TemperatureC":68,"Healthy":true,"Error":null},
+  {"TemperatureC":69,"Healthy":true,"Error":null},
+  {"TemperatureC":70,"Healthy":true,"Error":null},
+  {"TemperatureC":69,"Healthy":true,"Error":null},
+  {"TemperatureC":68.9,"Healthy":true,"Error":null},
+  {"TemperatureC":75,"Healthy":true,"Error":null},
+  {"TemperatureC":80,"Healthy":false,"Error":"Simulated stale sensor"},
+  {"TemperatureC":null,"Healthy":false,"Error":"Simulated missing sensor"},
+  {"TemperatureC":999,"Healthy":true,"Error":"Simulated invalid sensor"},
+  {"TemperatureC":50,"Healthy":true,"Error":null}
+]

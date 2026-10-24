@@ -1,0 +1,34 @@
+# Local configuration
+/config.json
+.env
+.env.*
+*.local.json
+
+# Generated files
+/artifacts/
+*.log
+*.tmp
+*.bak
+*.zip
+*.dmp
+*.etl
+
+# Secrets and certificates
+*.pem
+*.key
+*.pfx
+*.p12
+*secret*
+*token*
+
+# Editor and system
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Extracted third-party documentation
+/docs/aida-help-temp/extracted/
+
+# Third-party AIDA documentation
+/docs/aida-help-temp/

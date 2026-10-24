@@ -1,0 +1,56 @@
+# Контекст продолжения — 25 октября 2026, Europe/Minsk
+
+## Обязательные решения пользователя
+
+Общаться по-русски; вести документацию. Не менять BIOS, частоты, напряжения, не выполнять стресс-тесты. Согласовывать административные операции. Не включать боевой режим без отдельного подтверждения. Приложения для разрешённого списка ещё не согласованы.
+
+Получены два отдельных разрешения: запуск найденной подписанной AIDA64 с повышением; создание повышенной задачи её автозапуска. Никакого разрешения на реальные закрытия/выключение нет.
+
+## Текущая реализация
+
+Windows 10 Pro 19045; CPU E5-2680 v4 14/28; JGINYUE X99M GAMING D4/ARGB V3.1. PowerShell 5.1 runtime, WinForms overlay/tray, без сторонних зависимостей.
+
+AIDA64 Extreme 6.70.6000: `C:\Users\user\Downloads\Аида 64\Аида 64\aida64.exe`, подпись Valid FinalWire. Конфигурация после сохранения пользователем: рядом `aida64.ini`. Файл содержит личные/лицензионные настройки; не публиковать его целиком. Пользователь вручную включил Registry export из-за недоступности повышенного UI в Computer Use.
+
+Проверенные ключи локального ini (только чтение): `HWMonEnableRegistry=1`, `HWMonEnableSharedMem=0`, `HWMonUpdateFreqExtApp=1000`, `HWMonExtAppItems` включает SDATE/STIME/TCPUPKG. Не подменять конфигурацию AIDA целиком.
+
+Источник Registry: `Value.TCPUPKG`, `Label.TCPUPKG=CPU Package`, `Value.STIME` локально `0:27:27`, `Value.SDATE=25.10.2026`. TCPU платы показывал 28 °C при Package42; он не выбран. Доступны TCC-1-1...TCC-1-14. Значения Package в безопасных пробах 42–47 °C; это не стресс-проверка и не оценка охлаждения под нагрузкой.
+
+`src/Guard.Core.psm1`: чистый автомат порогов/гистерезиса, нормализация CPU, проверка разрешённого приложения.
+
+`src/Guard.Sensor.psm1`: read-only MMF/Registry, обязательный STIME, подтверждение изменения heartbeat, возраст по wall-clock и monotonic clock, диапазон (0;110], строгий ID. Повышенный процесс AIDA проверяется точным путём через QueryFullProcessImageNameW с PROCESS_QUERY_LIMITED_INFORMATION; сам монитор не повышать. Все Process/registry/MMF ресурсы освобождаются. Корректный неполный MMF может перейти к Registry; повреждённый MMF не маскируется fallback.
+
+`uTempGuard.ps1`: poll2s, счётчики Process.TotalProcessorTime, запрет неизвестных/служб/другого owner/session, single-instance mutex плюс FileShare.None. Status пишется атомарно. Файловые журналы с ротацией. В Observe реальные действия не доступны. Для будущего Live три допуска: Mode/флаг действия/receipt с SHA256 config; receipt отсутствует. Перед side effect новый sensor-read, identity+SHA проверки. Только CloseMainWindow и Win32Shutdown flag1; нет force. Cooldown реальных запросов60с.
+
+Конфигурация загружается при запуске; изменив config, перезапустить через Manage. Редактирование config во время Live инвалидирует receipt по хешу. Порог 75 не имеет задержки подтверждения/усреднения; опрос2s, затем немедленная повторная проверка перед действием. Прошлые намерения не ставятся в очередь.
+
+## Что реально установлено
+
+Текущий пользователь Startup\uTempGuard.lnk -> System32\wscript.exe -> Launch.vbs -> Windows PowerShell5.1 без видимой консоли. Проект работает из исходного каталога, не копируется в Program Files.
+
+Данные `C:\Users\user\AppData\Local\uTempGuard`: status.json/events.jsonl/fatal.log/install.json/instance.lock. Свежий статус после установки Running=true, State=Normal, Mode=Observe, SensorId=TCPUPKG,43°C. Pid и температура меняются, читать актуальные файлы.
+
+Scheduled Task `uTempGuard-AIDA64-user`, RunLevel Highest, Interactive, LogonTrigger только текущего пользователя, executable=найденная AIDA. Регистрация завершилась exit0; readback в artifacts/aida-autostart.json. Задача ещё не выполнялась при настоящем новом входе. Не считать LastTaskResult267011 ошибкой запуска: это состояние ещё не запускавшейся задачи.
+
+## Проверки и ограничения
+
+- Core103, sensor55 и management8 проверок прошли на PS5.1.
+- Runtime:10 имитированных readings, ожидаемые Normal/Warning/Normal/Critical/SensorFault/Normal;3 намерения,0 реальных действий. Первый запуск runtime-теста выявил особенность PS5.1 ConvertFrom-Json (массив одним элементом pipeline); исправлено прямым присваиванием, финальный тест прошёл. Не возвращать @(...|ConvertFrom-Json) для массива сценария.
+- Реальный headless runtime:3samples, восстановление AwaitingHeartbeatChange -> Normal, graceful exit MaxSamples,44°C.
+- Установка и запуск через Launch прошли, данные/журнал обновлялись.
+- Живой Stop/Start после установки и новый вход в Windows не проверены. Management unit fixture Stop не равен живому тесту.
+- При попытке проверить overlay Computer Use сообщил остановку пользователем физической Esc. Дальнейшая UI автоматизация прекращена. Не заявлять визуальную/игровую проверку состоявшейся.
+- RTSS/Afterburner не найден в проверенных местах. TopMost не гарантирует fullscreen.
+- Реальное закрытие и выключение намеренно не выполнялись. WMI shutdown privilege и приложение с save-dialog — unverified.
+
+## Следующие действия
+
+1. При разрешённом продолжении Computer Use визуально проверить индикатор на рабочем столе; позже обычная игра без стресс-теста/форсирования нагрузки. Для exclusive fullscreen вероятен RTSS, отдельная установка/проверка.
+2. Проверить реальный Stop/Start, ярлык автозапуска и новый вход в Windows в удобный пользователю момент, не выходить из сеанса без согласования.
+3. Согласовать приложения по точному EXE+SHA256 и риску несохранённых данных; allowlist сейчас оставить пустым.
+4. Обсудить предварительные Package70/75 и доработку охлаждения. Intel Tcase86 не равно Package/TjMax.
+5. Только после отдельного подтверждения подготовить конкретный допуск Live и согласованный тест штатного выключения. Не создавать receipt автоматически.
+
+## Удаление/откат
+
+Uninstall.ps1 удаляет только свой Startup ярлык и запрашивает остановку монитора. Исходники, config, данные, AIDA сохраняются. Созданная повышенная AIDA задача удаляется отдельно через AidaAutostart.ps1 -Action Remove в согласованном elevated session. Registry export отключается в AIDA, если пользователь больше не использует его. Не удалять драйверы AIDA вручную.

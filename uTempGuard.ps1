@@ -1,0 +1,232 @@
+﻿[CmdletBinding()]
+param(
+    [string]$ConfigPath,
+    [string]$DataDirectory = (Join-Path $env:LOCALAPPDATA 'uTempGuard'),
+    [switch]$Headless,
+    [int]$MaxSamples = 0,
+    [string]$SimulationPath
+)
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version 2.0
+if ([string]::IsNullOrWhiteSpace($ConfigPath)) { $ConfigPath=Join-Path $PSScriptRoot 'config.json' }
+Import-Module (Join-Path $PSScriptRoot 'src\Guard.Core.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'src\Guard.Sensor.psm1') -Force
+$DataDirectory = [IO.Path]::GetFullPath($DataDirectory).TrimEnd('\')
+[IO.Directory]::CreateDirectory($DataDirectory) | Out-Null
+$statusPath = Join-Path $DataDirectory 'status.json'
+$stopPath = Join-Path $DataDirectory 'stop.request'
+$logPath = Join-Path $DataDirectory 'events.jsonl'
+$started = [datetime]::UtcNow.ToString('o')
+$script:form = $null
+$script:tray = $null
+$script:lastNotice = [datetime]::MinValue
+$script:previousProcesses = @{}
+$script:clock = [Diagnostics.Stopwatch]::StartNew()
+$script:context = @{}
+$script:state = 'Normal'
+$script:lastSample = $null
+$script:count = 0
+$mutex = $null
+$ownsMutex = $false
+$instanceLock = $null
+$script:lastActions = @{}
+$running = $false
+
+function Write-GuardEvent {
+    param([string]$Event, [object]$Details)
+    if ((Test-Path -LiteralPath $logPath) -and (Get-Item -LiteralPath $logPath).Length -gt 5MB) {
+        for ($n=2; $n -ge 1; $n--) {
+            $old = "$logPath.$n"
+            if (Test-Path -LiteralPath $old) { Move-Item -LiteralPath $old -Destination "$logPath.$($n+1)" -Force }
+        }
+        Move-Item -LiteralPath $logPath -Destination "$logPath.1" -Force
+    }
+    $record = [ordered]@{Utc=[datetime]::UtcNow.ToString('o');Event=$Event;Details=$Details}
+    [IO.File]::AppendAllText($logPath, (($record | ConvertTo-Json -Depth 8 -Compress) + [Environment]::NewLine), [Text.UTF8Encoding]::new($false))
+}
+function Write-GuardStatus {
+    param([bool]$IsRunning, [string]$State, [object]$Sample)
+    $temperature = $null; $sensorError = $null
+    if ($null -ne $Sample) { $temperature = $Sample.TemperatureC; $sensorError = $Sample.Error }
+    $value = [ordered]@{Pid=$PID;StartedUtc=$started;UpdatedUtc=[datetime]::UtcNow.ToString('o');Running=$IsRunning;State=$State;TemperatureC=$temperature;SensorError=$sensorError;Mode=$config.Mode;Simulation=[bool]$SimulationPath;SensorId=$config.SensorId;SampleCount=$script:count;LogicalProcessors=$logicalCount}
+    $tmp = "$statusPath.$PID.tmp"
+    [IO.File]::WriteAllText($tmp, ($value | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
+    Move-Item -LiteralPath $tmp -Destination $statusPath -Force
+}
+function Show-GuardNotice {
+    param([string]$Text)
+    if ($null -ne $script:tray -and ([datetime]::UtcNow-$script:lastNotice).TotalSeconds -ge 60) {
+        $script:tray.ShowBalloonTip(10000, 'uTempGuard', $Text, [Windows.Forms.ToolTipIcon]::Warning)
+        $script:lastNotice = [datetime]::UtcNow
+    }
+}
+function Get-GuardCandidates {
+    $nowSeconds = $script:clock.Elapsed.TotalSeconds
+    $next = @{}; $hot = @()
+    foreach ($proc in [Diagnostics.Process]::GetProcesses()) {
+        try {
+            $startUtc = $proc.StartTime.ToUniversalTime().ToString('o')
+            $key = '{0}|{1}' -f $proc.Id,$startUtc
+            $cpu = $proc.TotalProcessorTime.TotalSeconds
+            $next[$key] = @{Cpu=$cpu;Time=$nowSeconds}
+            if (-not $script:previousProcesses.ContainsKey($key)) { continue }
+            $prev = $script:previousProcesses[$key]
+            $percent = Get-NormalizedCpuPercent -CpuSecondsDelta ($cpu-$prev.Cpu) -ElapsedSeconds ($nowSeconds-$prev.Time) -LogicalProcessors $logicalCount
+            if ($null -eq $percent -or $percent -le $config.CpuThresholdPercent) { continue }
+            $owner = $null; $isService = $true
+            $cim = Get-CimInstance Win32_Process -Filter "ProcessId=$($proc.Id)" -ErrorAction Stop
+            $ownerResult = Invoke-CimMethod -InputObject $cim -MethodName GetOwnerSid -ErrorAction Stop
+            if ($ownerResult.ReturnValue -eq 0) { $owner = $ownerResult.Sid }
+            $services = @(Get-CimInstance Win32_Service -Filter "ProcessId=$($proc.Id)" -ErrorAction Stop)
+            $isService = $services.Count -gt 0
+            $candidate = [pscustomobject]@{Pid=$proc.Id;Name=($proc.ProcessName+'.exe');Path=$proc.Path;OwnerSid=$owner;SessionId=$proc.SessionId;IsService=$isService;StartTimeUtc=$startUtc;HasWindow=($proc.MainWindowHandle -ne [IntPtr]::Zero);CpuPercent=[math]::Round($percent,2)}
+            $eligibility = Test-AllowedApplication -Candidate $candidate -AllowList @($config.AllowList) -CurrentUserSid $userSid -CurrentSessionId $sessionId
+            $hot += [pscustomobject]@{Candidate=$candidate;Eligibility=$eligibility}
+        } catch { # Unreadable processes are never candidates for an action.
+        } finally { $proc.Dispose() }
+    }
+    $script:previousProcesses = $next
+    return $hot
+}
+function Test-LiveApproval {
+    if ($SimulationPath -or $config.Mode -ne 'Live') { return $false }
+    $receiptPath = Join-Path $PSScriptRoot 'live-approval.json'
+    if (-not (Test-Path -LiteralPath $receiptPath)) { return $false }
+    try {
+        $receipt = Get-Content -LiteralPath $receiptPath -Raw | ConvertFrom-Json
+        return ($receipt.ApprovedByUser -is [bool] -and $receipt.ApprovedByUser -and $receipt.SensorValidatedForLive -is [bool] -and $receipt.SensorValidatedForLive -and $receipt.ConfigSha256 -eq (Get-FileHash -LiteralPath $ConfigPath -Algorithm SHA256).Hash)
+    } catch { return $false }
+}
+function Invoke-GuardIntent {
+    param([object]$Decision, [object[]]$Candidates)
+    if ($Decision.Intent -eq 'None') { return }
+    $live = Test-LiveApproval
+    Write-GuardEvent 'Intent' @{Intent=$Decision.Intent;State=$Decision.State;TemperatureC=$Decision.Temperature;ExecutionAllowed=$live;Candidates=@($Candidates | ForEach-Object { @{Pid=$_.Candidate.Pid;Name=$_.Candidate.Name;CpuPercent=$_.Candidate.CpuPercent;Allowed=$_.Eligibility.Allowed;Reason=$_.Eligibility.Reason} })}
+    if (-not $live) { return }
+    # Re-read the producer immediately before every side effect. Invalid input cancels it.
+    $fresh = Read-AidaSensor -SensorId $config.SensorId -AidaPath $config.AidaPath -MaxAgeSeconds $config.MaxAgeSeconds -Context $script:context
+    $again = Get-GuardDecision -Temperature $fresh.TemperatureC -SensorHealthy $fresh.Healthy -PreviousState $Decision.State -WarningC $config.WarningC -ResumeBelowC $config.ResumeBelowC -ShutdownC $config.ShutdownC
+    if ($Decision.Intent -eq 'Shutdown' -and $again.Intent -eq 'Shutdown' -and $config.EnableShutdown -is [bool] -and $config.EnableShutdown) {
+        if ($script:lastActions.ContainsKey('shutdown') -and ($script:clock.Elapsed.TotalSeconds-$script:lastActions['shutdown']) -lt 60) { return }
+        $script:lastActions['shutdown']=$script:clock.Elapsed.TotalSeconds
+        Write-GuardEvent 'OrderlyShutdownRequested' @{TemperatureC=$fresh.TemperatureC}
+        # Flag 1 is orderly shutdown; no force flag, no timeout implying forced closure.
+        $os = Get-CimInstance Win32_OperatingSystem
+        $result = Invoke-CimMethod -InputObject $os -MethodName Win32Shutdown -Arguments @{Flags=1;Reserved=0}
+        Write-GuardEvent 'OrderlyShutdownResult' @{ReturnValue=$result.ReturnValue}
+        return
+    }
+    if ($again.Intent -ne 'ReduceLoad' -or $config.EnableAppClose -isnot [bool] -or -not $config.EnableAppClose) { return }
+    foreach ($item in $Candidates) {
+        if (-not $item.Eligibility.Allowed) { continue }
+        try {
+            $fresh = Read-AidaSensor -SensorId $config.SensorId -AidaPath $config.AidaPath -MaxAgeSeconds $config.MaxAgeSeconds -Context $script:context
+            if (-not $fresh.Healthy -or $fresh.TemperatureC -lt $config.ResumeBelowC) { break }
+            $candidate = $item.Candidate
+            $actionKey='{0}|{1}' -f $candidate.Pid,$candidate.StartTimeUtc
+            if ($script:lastActions.ContainsKey($actionKey) -and ($script:clock.Elapsed.TotalSeconds-$script:lastActions[$actionKey]) -lt 60) { continue }
+            $proc = Get-Process -Id $candidate.Pid -ErrorAction Stop
+            try {
+                if ($proc.StartTime.ToUniversalTime().ToString('o') -ne $candidate.StartTimeUtc -or $proc.Path -ne $candidate.Path -or $proc.SessionId -ne $sessionId -or $proc.MainWindowHandle -eq [IntPtr]::Zero) { continue }
+                $owner = Invoke-CimMethod -InputObject (Get-CimInstance Win32_Process -Filter "ProcessId=$($proc.Id)") -MethodName GetOwnerSid
+                if ($owner.ReturnValue -ne 0 -or $owner.Sid -ne $userSid) { continue }
+                if (@(Get-CimInstance Win32_Service -Filter "ProcessId=$($proc.Id)").Count -gt 0) { continue }
+                if ((Get-FileHash -LiteralPath $candidate.Path -Algorithm SHA256).Hash -ne $item.Eligibility.Entry.Sha256) { continue }
+                $script:lastActions[$actionKey]=$script:clock.Elapsed.TotalSeconds
+                $accepted = $proc.CloseMainWindow()
+                Write-GuardEvent 'GracefulCloseRequested' @{Pid=$proc.Id;Accepted=$accepted;Path=$candidate.Path}
+                # An application may ask to save or refuse. Never kill or escalate.
+            } finally { $proc.Dispose() }
+        } catch { Write-GuardEvent 'ActionError' @{Message=$_.Exception.Message} }
+    }
+}
+function Update-GuardDisplay {
+    param([object]$Sample, [object]$Decision)
+    if ($null -eq $script:form) { return }
+    $suffix = if ($SimulationPath) {'ИМИТАЦИЯ'} elseif ($config.Mode -eq 'Observe') {'НАБЛЮДЕНИЕ'} elseif (Test-LiveApproval) {'БОЕВОЙ РЕЖИМ'} else {'ДЕЙСТВИЯ ЗАБЛОКИРОВАНЫ'}
+    if (-not $Sample.Healthy) { $script:label.Text = "CPU: нет достоверных данных`r`n$suffix | ДАТЧИК НЕДОСТУПЕН"; $script:form.BackColor=[Drawing.Color]::FromArgb(120,60,0) }
+    else {
+        $script:label.Text = ('CPU Package: {0:N0} °C' -f $Sample.TemperatureC)+"`r`n$suffix | $($Decision.State)"
+        $script:form.BackColor = switch ($Decision.State) {'Critical' {[Drawing.Color]::DarkRed} 'Warning' {[Drawing.Color]::DarkOrange} default {[Drawing.Color]::FromArgb(15,65,40)}}
+    }
+    $script:tray.Text = $script:label.Text.Replace("`r`n",' | ').Substring(0,[math]::Min(63,$script:label.Text.Replace("`r`n",' | ').Length))
+}
+try {
+    $config = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($config.Mode -notin @('Observe','Live') -or $config.PollSeconds -lt 1 -or $config.PollSeconds -gt 30 -or $config.MaxAgeSeconds -lt 3 -or $config.MaxAgeSeconds -gt 30 -or $config.CpuThresholdPercent -ne 30) { throw 'Invalid configuration: Mode, poll, freshness, CPU threshold.' }
+    $thresholdCheck = Get-GuardDecision -Temperature 40 -SensorHealthy $true -WarningC $config.WarningC -ResumeBelowC $config.ResumeBelowC -ShutdownC $config.ShutdownC
+    if ($thresholdCheck.State -eq 'SensorFault') { throw 'Invalid temperature thresholds.' }
+    $logicalCount = [Environment]::ProcessorCount
+    $userSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $sessionId = [Diagnostics.Process]::GetCurrentProcess().SessionId
+    $mutexKey = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($DataDirectory.ToUpperInvariant())).Replace('/','_').Replace('+','-')
+    $mutex = [Threading.Mutex]::new($false, ('Local\uTempGuard-'+$mutexKey))
+    try { $ownsMutex=$mutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $ownsMutex=$true }
+    if (-not $ownsMutex) { exit 0 }
+    # File identity also covers aliases/junctions referring to the same data folder.
+    try { $instanceLock=[IO.File]::Open((Join-Path $DataDirectory 'instance.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None) }
+    catch [IO.IOException] { exit 0 }
+    if (Test-Path -LiteralPath $stopPath) { Remove-Item -LiteralPath $stopPath }
+    $simulation = @()
+    if ($SimulationPath) { $simulation = Get-Content -LiteralPath $SimulationPath -Raw | ConvertFrom-Json; if ($simulation.Count -eq 0) { throw 'Empty simulation.' } }
+    if (-not $Headless) {
+        Add-Type -AssemblyName System.Windows.Forms
+        Add-Type -AssemblyName System.Drawing
+        [Windows.Forms.Application]::EnableVisualStyles()
+        $script:form = [Windows.Forms.Form]::new()
+        $script:form.Text='uTempGuard'; $script:form.FormBorderStyle='None'; $script:form.TopMost=$true; $script:form.ShowInTaskbar=$false
+        $script:form.Size=[Drawing.Size]::new(350,76); $script:form.StartPosition='Manual'
+        $area=[Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+        $script:form.Location=[Drawing.Point]::new(($area.Right-$script:form.Width-$config.Overlay.MarginX),($area.Top+$config.Overlay.MarginY))
+        $script:label=[Windows.Forms.Label]::new(); $script:label.Dock='Fill'; $script:label.ForeColor=[Drawing.Color]::White; $script:label.Font=[Drawing.Font]::new('Segoe UI',12); $script:label.TextAlign='MiddleCenter'
+        $script:form.Controls.Add($script:label)
+        $menu=[Windows.Forms.ContextMenuStrip]::new()
+        $stopItem=$menu.Items.Add('Остановить uTempGuard')
+        $stopItem.add_Click({[IO.File]::WriteAllText($stopPath,'stop')})
+        $script:form.ContextMenuStrip=$menu
+        $script:tray=[Windows.Forms.NotifyIcon]::new(); $script:tray.Icon=[Drawing.SystemIcons]::Information; $script:tray.ContextMenuStrip=$menu; $script:tray.Visible=$true; $script:tray.Text='uTempGuard'
+        if ($config.Overlay.Enabled) { $script:form.Show() }
+    }
+    $running=$true
+    Write-GuardEvent 'Started' @{Version=$config.Version;Mode=$config.Mode;Simulation=[bool]$SimulationPath;LogicalProcessors=$logicalCount;ConfigPath=$ConfigPath;LiveApproved=(Test-LiveApproval)}
+    $nextTick=0.0
+    while (-not (Test-Path -LiteralPath $stopPath)) {
+        if ($null -ne $script:form) { [Windows.Forms.Application]::DoEvents() }
+        if ($script:clock.Elapsed.TotalSeconds -lt $nextTick) { Start-Sleep -Milliseconds 100; continue }
+        $nextTick=$script:clock.Elapsed.TotalSeconds+$config.PollSeconds
+        $previousState=$script:state
+        if ($SimulationPath) {
+            if ($script:count -ge $simulation.Count) { break }
+            $sim=$simulation[$script:count]
+            $script:lastSample=[pscustomobject]@{Healthy=[bool]$sim.Healthy;TemperatureC=$sim.TemperatureC;Error=$sim.Error;SensorId=$config.SensorId;Source='Simulation';Heartbeat='simulation'}
+            $candidates=@()
+        } else {
+            $script:lastSample=Read-AidaSensor -SensorId $config.SensorId -AidaPath $config.AidaPath -MaxAgeSeconds $config.MaxAgeSeconds -Context $script:context
+            $candidates=@(Get-GuardCandidates)
+        }
+        $decision=Get-GuardDecision -Temperature $script:lastSample.TemperatureC -SensorHealthy $script:lastSample.Healthy -PreviousState $script:state -WarningC $config.WarningC -ResumeBelowC $config.ResumeBelowC -ShutdownC $config.ShutdownC
+        $script:state=$decision.State; $script:count++
+        if ($previousState -ne $script:state -or $script:count -eq 1) { Write-GuardEvent 'StateChanged' @{From=$previousState;To=$script:state;TemperatureC=$script:lastSample.TemperatureC;Error=$script:lastSample.Error} }
+        if ($script:state -ne 'Normal') { Show-GuardNotice $(if ($script:state -eq 'SensorFault') {'Нет достоверных данных CPU. Защитные действия заблокированы.'} else {"Температура CPU $($script:lastSample.TemperatureC) °C. Режим: $($config.Mode)."}) }
+        Invoke-GuardIntent -Decision $decision -Candidates $candidates
+        Update-GuardDisplay -Sample $script:lastSample -Decision $decision
+        Write-GuardStatus -IsRunning $true -State $script:state -Sample $script:lastSample
+        if ($script:count % 30 -eq 0) { Write-GuardEvent 'Sample' $script:lastSample }
+        if ($MaxSamples -gt 0 -and $script:count -ge $MaxSamples) { break }
+    }
+    Write-GuardEvent 'Stopped' @{Samples=$script:count}
+} catch {
+    [IO.File]::AppendAllText((Join-Path $DataDirectory 'fatal.log'), ([datetime]::UtcNow.ToString('o')+' '+$_.ToString()+[Environment]::NewLine+$_.ScriptStackTrace+[Environment]::NewLine))
+    try { Write-GuardEvent 'FatalError' @{Message=$_.Exception.Message;Stack=$_.ScriptStackTrace} } catch {}
+    if ($null -ne $script:tray) { $script:tray.ShowBalloonTip(10000,'uTempGuard: остановлен',$_.Exception.Message,[Windows.Forms.ToolTipIcon]::Error) }
+    throw
+} finally {
+    if ($ownsMutex) {
+        if ($running) { try { Write-GuardStatus -IsRunning $false -State 'Stopped' -Sample $script:lastSample } catch {} }
+        if ($null -ne $script:tray) { $script:tray.Visible=$false; $script:tray.Dispose() }
+        if ($null -ne $script:form) { $script:form.Dispose() }
+        $mutex.ReleaseMutex()
+    }
+    if ($null -ne $instanceLock) { $instanceLock.Dispose() }
+    if ($null -ne $mutex) { $mutex.Dispose() }
+}
