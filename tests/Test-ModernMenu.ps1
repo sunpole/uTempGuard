@@ -2,6 +2,8 @@
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version 2.0
 $root=Split-Path $PSScriptRoot -Parent
+Import-Module (Join-Path $root 'src\Guard.Localization.psm1') -Force
+$null=Initialize-GuardLocalization -DataDirectory (Join-Path $root 'artifacts\modern-ui-translation')
 $module=Join-Path $root 'src\Guard.ModernMenu.ps1'
 $tokens=$null;$errors=$null
 [void][Management.Automation.Language.Parser]::ParseFile($module,[ref]$tokens,[ref]$errors)
@@ -72,13 +74,39 @@ try{
         throw 'Main dark context panel not created with expected actions'
     }
     $allText=@($script:modernBody.Controls | ForEach-Object {$_.Text}) -join ';'
-    foreach($needle in @('ПОКАЗЫВАТЬ ЧТО','ВЫКЛЮЧАТЬ ПК','GitHub','Проверить обновления','Остановить')){
+    foreach($needle in @('Показывать','Выключение','GitHub','Обновления','Остановить')){
         if($allText -notmatch [regex]::Escape($needle)){throw ('Main UI missing: '+$needle)}
     }
+    $metrics=Get-GuardModernPageMetrics -WorkingHeight 720
+    if($metrics.Height -gt 545 -or $metrics.Overflow -or $script:modernBody.AutoScroll){
+        throw ('Home menu is not compact or is clipped: '+($metrics|ConvertTo-Json -Compress))
+    }
+    foreach($control in $script:modernBody.Controls){
+        if($control -is [Windows.Forms.Button] -and
+          ($control.Height -gt 29 -or -not $control.AutoEllipsis -or
+          $control.Text.Contains([Environment]::NewLine))){
+            throw ('Menu row wrapped or too tall: '+$control.Text)
+        }
+    }
+    Render-GuardModernPage -Page 'Language'
+    if(@($script:modernBody.Controls|Where-Object {$_.Text -eq 'English'}).Count -ne 1){
+        throw 'English language selection is missing'
+    }
+    $null=Set-GuardLanguage -Locale 'en-US'
+    Render-GuardModernPage -Page 'Home'
+    $enText=@($script:modernBody.Controls|ForEach-Object {$_.Text}) -join ';'
+    if($enText -notmatch 'Shut down' -or $enText -notmatch 'Updates'){
+        throw 'English UI labels failed to render'
+    }
+    $enMetrics=Get-GuardModernPageMetrics -WorkingHeight 720
+    if($enMetrics.Overflow -or $enMetrics.Height -gt 545){throw 'English menu is clipped'}
+    $null=Set-GuardLanguage -Locale 'ru-RU'
+    Render-GuardModernPage -Page 'Home'
     Render-GuardModernPage -Page 'Display'
     if($script:modernBody.Controls.Count -lt 7){throw 'Display source selection options missing'}
     Render-GuardModernPage -Page 'Shutdown'
     if($script:modernBody.Controls.Count -lt 7){throw 'Shutdown source selection options missing'}
+    Render-GuardModernPage -Page 'Language'
     Render-GuardModernPage -Page 'DisplayCustom'
     $custom=@($script:modernBody.Controls | Where-Object {$_.Text -match 'GPU'})
     if($custom.Count -ne 1){throw 'Custom sensor checkbox not rendered'}
@@ -87,9 +115,12 @@ try{
         throw 'Read-only CPU sensor page was not rendered'
     }
     Render-GuardModernPage -Page 'Appearance'
+    Render-GuardModernPage -Page 'Opacity'
     if(@($script:modernBody.Controls | Where-Object {$_.Text -match '100%'}).Count -ne 1){
         throw 'Opacity controls missing'
     }
+    Render-GuardModernPage -Page 'Positions'
+    if(@($script:modernBody.Controls | Where-Object {$_.Text -match 'Справа'}).Count -lt 2){throw 'Position controls missing'}
     Render-GuardModernPage -Page 'About'
     if(@($script:modernBody.Controls | Where-Object {$_.Text -match 'GitHub'}).Count -lt 1){
         throw 'About/repository action missing'
