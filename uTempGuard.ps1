@@ -14,6 +14,7 @@ Import-Module (Join-Path $PSScriptRoot 'src\Guard.Sensor.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'src\Guard.CpuSummary.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'src\Guard.Overlay.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'src\Guard.Notices.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'src\Guard.TemperatureSources.psm1') -Force
 $DataDirectory = [IO.Path]::GetFullPath($DataDirectory).TrimEnd('\')
 [IO.Directory]::CreateDirectory($DataDirectory) | Out-Null
 $statusPath = Join-Path $DataDirectory 'status.json'
@@ -32,6 +33,13 @@ $script:context = @{}
 $script:state = 'Normal'
 $script:lastSample = $null
 $script:lastCpuSummary = $null
+$script:lastTemperatureCatalog = $null
+$script:lastDisplayTemperature = $null
+$script:lastShutdownTemperature = $null
+$script:sourcePolicyPath = Join-Path $DataDirectory 'temperature-sources.json'
+$script:sourceApprovalPath = Join-Path $DataDirectory 'temperature-power-approval.json'
+$script:temperaturePolicy = $null
+$script:sourceMenus = $null
 $script:lastDecision = $null
 $script:overlaySettingsPath = Join-Path $DataDirectory 'overlay.json'
 $script:overlaySettings = $null
@@ -58,7 +66,7 @@ function Write-GuardStatus {
     param([bool]$IsRunning, [string]$State, [object]$Sample)
     $temperature = $null; $sensorError = $null
     if ($null -ne $Sample) { $temperature = $Sample.TemperatureC; $sensorError = $Sample.Error }
-    $value = [ordered]@{Pid=$PID;StartedUtc=$started;UpdatedUtc=[datetime]::UtcNow.ToString('o');Running=$IsRunning;State=$State;TemperatureC=$temperature;SensorError=$sensorError;Mode=$config.Mode;Simulation=[bool]$SimulationPath;SensorId=$config.SensorId;SampleCount=$script:count;LogicalProcessors=$logicalCount}
+    $value = [ordered]@{Pid=$PID;StartedUtc=$started;UpdatedUtc=[datetime]::UtcNow.ToString('o');Running=$IsRunning;State=$State;TemperatureC=$temperature;SensorError=$sensorError;Mode=$config.Mode;Simulation=[bool]$SimulationPath;SensorId=$config.SensorId;SampleCount=$script:count;LogicalProcessors=$logicalCount;DisplaySourceMode=$script:temperaturePolicy.DisplayMode;ShutdownSourceMode=$script:temperaturePolicy.ShutdownMode;DisplayMaxC=$(if($null -ne $script:lastDisplayTemperature){$script:lastDisplayTemperature.MaxC}else{$null});ShutdownMaxC=$(if($null -ne $script:lastShutdownTemperature){$script:lastShutdownTemperature.MaxC}else{$null})}
     $tmp = "$statusPath.$PID.tmp"
     [IO.File]::WriteAllText($tmp, ($value | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
     Move-Item -LiteralPath $tmp -Destination $statusPath -Force
@@ -152,6 +160,12 @@ function Invoke-GuardIntent {
     $fresh = Read-AidaSensor -SensorId $config.SensorId -AidaPath $config.AidaPath -MaxAgeSeconds $config.MaxAgeSeconds -Context $script:context
     $freshSummary = if ($fresh.Healthy) { Read-GuardCpuTemperatureSummary -VerifiedSample $fresh } else { $null }
     $verifiedMaximum = Get-VerifiedCpuMaximum -Primary $fresh -CpuSummary $freshSummary
+    if($Decision.Intent -eq 'Shutdown' -and $script:temperaturePolicy.ShutdownMode -ne 'LegacyCpu'){
+        $sourceApproved=Test-GuardActionSourceApproval -Policy $script:temperaturePolicy -ReceiptPath $script:sourceApprovalPath -ConfigPath $ConfigPath
+        $freshCatalog=if($fresh.Healthy -and $sourceApproved){Read-GuardTemperatureCatalog -VerifiedSample $fresh}else{$null}
+        $sourceMax=Get-GuardTemperatureSelection -Catalog $freshCatalog -Mode $script:temperaturePolicy.ShutdownMode -SelectedIds @($script:temperaturePolicy.ShutdownIds) -CpuSummary $freshSummary
+        $verifiedMaximum=if($sourceApproved -and $sourceMax.Healthy){$sourceMax.MaxC}else{$null}
+    }
     $again = Get-GuardDecision -Temperature $verifiedMaximum -SensorHealthy $fresh.Healthy -PreviousState $Decision.State -WarningC $config.WarningC -ResumeBelowC $config.ResumeBelowC -ShutdownC $config.ShutdownC
     if ($Decision.Intent -eq 'Shutdown' -and $again.Intent -eq 'Shutdown' -and $config.EnableShutdown -is [bool] -and $config.EnableShutdown) {
         if ($script:lastActions.ContainsKey('shutdown') -and ($script:clock.Elapsed.TotalSeconds-$script:lastActions['shutdown']) -lt 60) { return }
@@ -203,9 +217,11 @@ function Invoke-GuardIntent {
     }
 }
 . (Join-Path $PSScriptRoot 'src\Guard.OverlayUI.ps1')
+. (Join-Path $PSScriptRoot 'src\Guard.SourceMenu.ps1')
 
 try {
     $config = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $script:temperaturePolicy=Get-GuardTemperaturePolicy -Path $script:sourcePolicyPath
     if ($config.Mode -notin @('Observe','Live') -or $config.PollSeconds -lt 1 -or $config.PollSeconds -gt 30 -or $config.MaxAgeSeconds -lt 3 -or $config.MaxAgeSeconds -gt 30 -or $config.CpuThresholdPercent -ne 30) { throw 'Invalid configuration: Mode, poll, freshness, CPU threshold.' }
     $thresholdCheck = Get-GuardDecision -Temperature 40 -SensorHealthy $true -WarningC $config.WarningC -ResumeBelowC $config.ResumeBelowC -ShutdownC $config.ShutdownC
     if ($thresholdCheck.State -eq 'SensorFault') { throw 'Invalid temperature thresholds.' }
@@ -238,9 +254,11 @@ try {
             $script:lastSample=[pscustomobject]@{Healthy=[bool]$sim.Healthy;TemperatureC=$sim.TemperatureC;Error=$sim.Error;SensorId=$config.SensorId;Source='Simulation';Heartbeat='simulation'}
             $candidates=@()
             $script:lastCpuSummary=$null
+            $script:lastTemperatureCatalog=$null
         } else {
             $script:lastSample=Read-AidaSensor -SensorId $config.SensorId -AidaPath $config.AidaPath -MaxAgeSeconds $config.MaxAgeSeconds -Context $script:context
             $script:lastCpuSummary=Read-GuardCpuTemperatureSummary -VerifiedSample $script:lastSample
+            $script:lastTemperatureCatalog=if($script:lastSample.Healthy){Read-GuardTemperatureCatalog -VerifiedSample $script:lastSample}else{$null}
             $candidates=@()
         }
         if (-not $SimulationPath -and $script:lastSample.Healthy -and -not $script:firstValidSensorSeen) {
@@ -248,7 +266,19 @@ try {
             Write-GuardEvent 'StartupTelemetryReady' @{ElapsedSeconds=[math]::Round($script:clock.Elapsed.TotalSeconds,2)}
         }
         $decisionTemperature=Get-VerifiedCpuMaximum -Primary $script:lastSample -CpuSummary $script:lastCpuSummary
-        $decision=Get-GuardDecision -Temperature $decisionTemperature -SensorHealthy $script:lastSample.Healthy -PreviousState $script:state -WarningC $config.WarningC -ResumeBelowC $config.ResumeBelowC -ShutdownC $config.ShutdownC
+        $cpuDecision=Get-GuardDecision -Temperature $decisionTemperature -SensorHealthy $script:lastSample.Healthy -PreviousState $script:state -WarningC $config.WarningC -ResumeBelowC $config.ResumeBelowC -ShutdownC $config.ShutdownC
+        $decision=$cpuDecision
+        $script:lastDisplayTemperature=Get-GuardTemperatureSelection -Catalog $script:lastTemperatureCatalog -Mode $script:temperaturePolicy.DisplayMode -SelectedIds @($script:temperaturePolicy.DisplayIds) -CpuSummary $script:lastCpuSummary
+        $script:lastShutdownTemperature=$null
+        if(-not $SimulationPath -and $script:temperaturePolicy.ShutdownMode -ne 'LegacyCpu'){
+            $script:lastShutdownTemperature=Get-GuardTemperatureSelection -Catalog $script:lastTemperatureCatalog -Mode $script:temperaturePolicy.ShutdownMode -SelectedIds @($script:temperaturePolicy.ShutdownIds) -CpuSummary $script:lastCpuSummary
+            $sourceApproved=Test-GuardActionSourceApproval -Policy $script:temperaturePolicy -ReceiptPath $script:sourceApprovalPath -ConfigPath $ConfigPath
+            if($sourceApproved -and $script:lastSample.Healthy -and $script:lastShutdownTemperature.Healthy -and $script:lastShutdownTemperature.MaxC -ge $config.ShutdownC){
+                $decision=Get-GuardDecision -Temperature $script:lastShutdownTemperature.MaxC -SensorHealthy $true -PreviousState $script:state -WarningC $config.WarningC -ResumeBelowC $config.ResumeBelowC -ShutdownC $config.ShutdownC
+            } elseif($cpuDecision.State -eq 'Critical'){
+                $decision=Get-GuardDecision -Temperature $config.WarningC -SensorHealthy $true -PreviousState $script:state -WarningC $config.WarningC -ResumeBelowC $config.ResumeBelowC -ShutdownC $config.ShutdownC
+            }
+        }
         if (-not $SimulationPath -and $decision.Intent -eq 'ReduceLoad' -and $config.EnableAppClose -and @($config.AllowList).Count -gt 0 -and (Test-LiveApproval)) {
             $candidates=@(Get-GuardCandidates)
         }
@@ -263,7 +293,7 @@ try {
         }
         if ($notice.Notify) { Show-GuardNotice $(if ($script:state -eq 'SensorFault') {'Нет достоверных данных CPU. Защитные действия заблокированы.'} else {"Температура CPU $($script:lastSample.TemperatureC) °C. Режим: $($config.Mode)."}) }
         Invoke-GuardIntent -Decision $decision -Candidates $candidates
-        Update-GuardDisplay -Sample $script:lastSample -Decision $decision -CpuSummary $script:lastCpuSummary
+        Update-GuardDisplay -Sample $script:lastSample -Decision $decision -CpuSummary $script:lastCpuSummary -TemperatureSelection $script:lastDisplayTemperature
         Write-GuardStatus -IsRunning $true -State $script:state -Sample $script:lastSample
         if ($script:count % 30 -eq 0) { Write-GuardEvent 'Sample' $script:lastSample }
         if ($MaxSamples -gt 0 -and $script:count -ge $MaxSamples) { break }
