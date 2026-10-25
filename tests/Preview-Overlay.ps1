@@ -45,8 +45,10 @@ function Test-LiveApproval { return $false }
 function Write-GuardEvent { param([string]$Event,[object]$Details) }
 . (Join-Path $root 'src\Guard.OverlayUI.ps1')
 . (Join-Path $root 'src\Guard.SourceMenu.ps1')
+. (Join-Path $root 'src\Guard.ModernMenu.ps1')
 try {
     Initialize-GuardOverlay
+    Initialize-GuardModernMenu
     Update-GuardDisplay -Sample $script:lastSample -Decision $script:lastDecision
     Write-Output 'UI preview only: no sensor polling, application closing, shutdown, startup or administrator operations.'
     Write-Output 'Use the uTempGuard icon near the Windows clock -> right-click -> Закрыть предпросмотр.'
@@ -55,6 +57,7 @@ try {
         Start-Sleep -Milliseconds 75
     }
 } finally {
+    Close-GuardModernMenu
     if ($null -ne $script:tray) { $script:tray.Visible=$false; $script:tray.Dispose() }
     if ($null -ne $script:form) { $script:form.Dispose() }
     if (Test-Path -LiteralPath $stopPath) { Remove-Item -LiteralPath $stopPath }
