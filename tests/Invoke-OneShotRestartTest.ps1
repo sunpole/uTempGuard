@@ -27,10 +27,23 @@ if($Action -eq 'Preview') {
     return
 }
 if($Action -eq 'Status') {
+    $recordExists=Test-Path -LiteralPath $latch -PathType Leaf
+    $rebootAfterRequest=$false
+    $lastBoot=''
+    if($recordExists) {
+        try {
+            $record=Get-Content -LiteralPath $latch -Raw -Encoding UTF8 | ConvertFrom-Json
+            $requestedUtc=[DateTimeOffset]::Parse([string]$record.Utc,[Globalization.CultureInfo]::InvariantCulture).UtcDateTime
+            $boot=(Get-CimInstance Win32_OperatingSystem -ErrorAction Stop).LastBootUpTime.ToUniversalTime()
+            $lastBoot=$boot.ToString('o')
+            $rebootAfterRequest=($boot -gt $requestedUtc)
+        } catch { $lastBoot='Unavailable' }
+    }
     [pscustomobject]@{
-        TestId=$TestId;PreviouslyRequested=(Test-Path -LiteralPath $latch -PathType Leaf)
+        TestId=$TestId;PreviouslyRequested=$recordExists;BootAfterRequest=$rebootAfterRequest
+        LastBootUtc=$lastBoot
         ProductionConfigChanged=$false
-        Note='A stored request is NOT proof Windows completed the restart'
+        Note='A later boot timestamp confirms the PC rebooted since request, not its exact cause'
     }
     return
 }
