@@ -192,6 +192,7 @@ function Render-GuardModernPage {
                 Add-GuardModernSeparator
                 Add-GuardModernRow -Text (Get-GuardUiText 'home.project') -Action 'OpenUrl' -Value 'https://github.com/sunpole/uTempGuard'
                 Add-GuardModernRow -Text (Get-GuardUiText 'home.updates') -Action 'Page' -Value 'Updates'
+                Add-GuardModernRow -Text (Get-GuardUiText 'home.about') -Action 'Page' -Value 'About'
                 Add-GuardModernSeparator
                 Add-GuardModernRow -Text (Get-GuardUiText 'home.stop') -Action 'Stop' -Danger
             }
