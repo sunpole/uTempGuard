@@ -105,6 +105,9 @@
     "fallback.showMode": "Датчики для показа",
     "fallback.sourceConfirm": "Подтвердить датчики…",
     "fallback.sensorWaiting": "Ожидание AIDA64",
-    "home.about": "О программе ›"
+    "home.about": "О программе ›",
+    "gallery.open": "Иконки · галерея 28 SVG ↗",
+    "gallery.edit": "Просмотр 32 px, обе темы и мигание",
+    "about.logoLink": "Официальный SVG ↗"
   }
 }
