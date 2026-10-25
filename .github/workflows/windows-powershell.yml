@@ -1,0 +1,27 @@
+name: Windows PowerShell 5.1 safety checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  safe-tests:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse PowerShell files and run isolated tests
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = @('uTempGuard.ps1','Update-uTempGuard.ps1','src/Guard.Overlay.psm1','src/Guard.OverlayUI.ps1','tests/Preview-Overlay.ps1','tests/Test-OverlayDisplay.ps1')
+          foreach ($file in $files) {
+            $tokens = $null
+            $errorsFound = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile((Join-Path $pwd $file), [ref]$tokens, [ref]$errorsFound)
+            if ($errorsFound) { throw "PowerShell parse failed: $file ($($errorsFound -join '; '))" }
+          }
+          foreach ($test in @('Test-Core.ps1','Test-Sensor.ps1','Test-Management.ps1','Test-ActionGuards.ps1','Test-Overlay.ps1','Test-OverlayDisplay.ps1')) {
+            & "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path 'tests' $test)
+            if ($LASTEXITCODE -ne 0) { throw "Failed: $test" }
+          }

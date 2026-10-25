@@ -32,3 +32,7 @@ Thumbs.db
 
 # Third-party AIDA documentation
 /docs/aida-help-temp/
+
+# Safety approval and visual preferences (always local)
+/live-approval.json
+/overlay.json
