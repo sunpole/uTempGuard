@@ -104,6 +104,7 @@
     "fallback.powerMode": "Shutdown sensors",
     "fallback.showMode": "Display sensors",
     "fallback.sourceConfirm": "Approve sensors…",
-    "fallback.sensorWaiting": "Waiting for AIDA64"
+    "fallback.sensorWaiting": "Waiting for AIDA64",
+    "home.about": "About ›"
   }
 }
