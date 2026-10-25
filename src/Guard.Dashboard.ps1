@@ -227,8 +227,16 @@ function Update-GuardDashboard {
             $permitted=[bool](Test-GuardActionSourceApproval -Policy $script:temperaturePolicy -ReceiptPath $script:sourceApprovalPath -ConfigPath $ConfigPath)
         }
     }catch{$permitted=$false}
-    $script:dashboardLabels.Safety.Text=Get-GuardText -Key $(if($permitted){'dashboard.approved'}else{'dashboard.notApproved'})
-    $script:dashboardLabels.Safety.ForeColor=if($permitted){$script:dashboardGreen}else{$script:dashboardAmber}
+    # Approval never implies that a stale or missing shutdown sensor can act.
+    $shutdownHealthy=($null -ne $script:lastSample -and $script:lastSample.Healthy -and
+        $null -ne $script:lastShutdownTemperature -and $script:lastShutdownTemperature.Healthy)
+    if($permitted -and -not $shutdownHealthy){
+        $script:dashboardLabels.Safety.Text=Get-GuardText -Key 'dashboard.sensorBlocked'
+        $script:dashboardLabels.Safety.ForeColor=$script:dashboardAmber
+    }else{
+        $script:dashboardLabels.Safety.Text=Get-GuardText -Key $(if($permitted){'dashboard.approved'}else{'dashboard.notApproved'})
+        $script:dashboardLabels.Safety.ForeColor=if($permitted){$script:dashboardGreen}else{$script:dashboardAmber}
+    }
     $script:dashboardLabels.Subtitle.Text=Get-GuardText -Key 'dashboard.subtitle'
     $script:dashboardLabels.Footer.Text=Get-GuardText -Key 'dashboard.footer'
 }
