@@ -4,5 +4,5 @@ if not exist "%~dp0config.json" (
   echo Welcome to uTempGuard. Run first-time setup.
   call "%~dp0Install-uTempGuard.cmd"
 ) else (
-  "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "%~dp0Open-uTempGuard.ps1"
+  start "" "%SystemRoot%\System32\wscript.exe" "%~dp0Open-uTempGuard.vbs"
 )
