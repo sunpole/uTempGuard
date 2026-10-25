@@ -38,7 +38,7 @@ try {
     [Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell) | Out-Null
 }
 $manifest = [ordered]@{
-    Product = 'uTempGuard'; Version = '0.1.0'; ProjectPath = $projectPath
+    Product = 'uTempGuard'; Version = '0.5.1'; ProjectPath = $projectPath
     DataDirectory = $DataDirectory; ShortcutPath = $shortcutPath
     TargetPath = $targetPath; Arguments = $arguments
     InstalledUtc = [DateTime]::UtcNow.ToString('o'); Scope = 'CurrentUser'
