@@ -8,14 +8,17 @@ $null=Initialize-GuardLocalization -DataDirectory (Join-Path $root 'artifacts\da
 . (Join-Path $root 'src\Guard.Dashboard.ps1')
 $script:lastSample=$null
 $script:lastDisplayTemperature=$null
+$script:lastShutdownTemperature=$null
 $script:lastCpuSummary=$null
 $script:temperaturePolicy=[pscustomobject]@{DisplayMode='All';ShutdownMode='All'}
 $script:sourceApprovalPath=Join-Path $root 'artifacts\ci-never-approved.json'
 $ConfigPath=Join-Path $root 'config.example.json'
 $script:config=[pscustomobject]@{Mode='Observe'}
 $script:state='Normal'
-function Test-LiveApproval{return $false}
-function Test-GuardActionSourceApproval{return $false}
+$script:mockLiveApproval=$false
+$script:mockSourceApproval=$false
+function Test-LiveApproval{return [bool]$script:mockLiveApproval}
+function Test-GuardActionSourceApproval{return [bool]$script:mockSourceApproval}
 $icon=Get-GuardOfficialLogo
 try{
     Initialize-GuardDashboard
@@ -43,6 +46,22 @@ try{
        $script:dashboardLabels.Sensors.Text -ne '15/15'){
         throw 'Synthetic verified readings not shown.'
     }
+    $script:config.Mode='Live'
+    $script:mockLiveApproval=$true
+    $script:mockSourceApproval=$true
+    $script:lastShutdownTemperature=[pscustomobject]@{Healthy=$false}
+    Update-GuardDashboard -Force
+    if($script:dashboardLabels.Safety.Text -notmatch 'Датчики недостоверны'){
+        throw 'Live approval incorrectly shown safe with missing shutdown readings.'
+    }
+    $script:lastShutdownTemperature.Healthy=$true
+    Update-GuardDashboard -Force
+    if($script:dashboardLabels.Safety.Text -notmatch 'Разрешено'){
+        throw 'Verified approved shutdown state not shown.'
+    }
+    $script:mockLiveApproval=$false
+    $script:mockSourceApproval=$false
+    $script:config.Mode='Observe'
     $script:lastSample.Healthy=$false
     Update-GuardDashboard -Force
     if($script:dashboardLabels.Temperature.Text -notmatch 'Нет достоверных'){
