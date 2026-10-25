@@ -1,23 +1,26 @@
-﻿# uTempGuard Fluent-inspired Windows Forms menu.
-# UI only: delegates power approval/sensor validation to the existing guard.
+﻿# Compact responsive Windows 10 WinForms UI. Presentation-only; no changed power actions.
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Windows.Forms
-$script:modernMenu = $null
-$script:modernBody = $null
-$script:modernHeaderTemperature = $null
-$script:modernLogo = $null
-$script:modernIcon = $null
-$script:modernImage = $null
-$script:modernModal = $false
-$script:modernPage = 'Home'
-$script:modernDark = [Drawing.ColorTranslator]::FromHtml('#101827')
-$script:modernSurface = [Drawing.ColorTranslator]::FromHtml('#182438')
-$script:modernHover = [Drawing.ColorTranslator]::FromHtml('#283B57')
-$script:modernText = [Drawing.ColorTranslator]::FromHtml('#F1F5F9')
-$script:modernMuted = [Drawing.ColorTranslator]::FromHtml('#A8BDD3')
-$script:modernAccent = [Drawing.ColorTranslator]::FromHtml('#22D3EE')
-$script:modernWarning = [Drawing.ColorTranslator]::FromHtml('#F59E0B')
-
+$script:modernMenu=$null
+$script:modernBody=$null
+$script:modernSubtitle=$null
+$script:modernIcon=$null
+$script:modernImage=$null
+$script:modernModal=$false
+$script:modernPage='Home'
+$script:modernSensorPage=0
+$script:modernPageSize=12
+$script:modernRowHeight=26
+$script:modernWidth=370
+$script:modernHeaderHeight=55
+$script:modernFooterHeight=21
+$script:modernDark=[Drawing.ColorTranslator]::FromHtml('#101827')
+$script:modernSurface=[Drawing.ColorTranslator]::FromHtml('#182438')
+$script:modernHover=[Drawing.ColorTranslator]::FromHtml('#283B57')
+$script:modernText=[Drawing.ColorTranslator]::FromHtml('#F1F5F9')
+$script:modernMuted=[Drawing.ColorTranslator]::FromHtml('#A8BDD3')
+$script:modernAccent=[Drawing.ColorTranslator]::FromHtml('#22D3EE')
+$script:modernWarning=[Drawing.ColorTranslator]::FromHtml('#F59E0B')
 function Get-GuardOfficialLogo {
     if($null -ne $script:modernImage){return $script:modernImage}
     $source = Join-Path $PSScriptRoot '..\assets\u_logo_64.png.base64'
@@ -34,200 +37,321 @@ function Get-GuardOfficialLogo {
         return $script:modernImage
     }catch{return $null}
 }
+
+function Get-GuardUiText {
+    param([string]$Key,[object[]]$Values=@())
+    Get-GuardText -Key $Key -Values $Values
+}
 function Get-GuardModernSummaryText {
-    if($null -eq $script:lastSample -or -not $script:lastSample.Healthy){return 'Ожидаем данные AIDA64'}
-    $chosen=$script:lastDisplayTemperature
-    $c=if($null -ne $chosen -and $chosen.Healthy){$chosen.MaxC}else{$script:lastSample.TemperatureC}
-    if($null -eq $c){return 'Датчик не подтверждён'}
-    return ('Сейчас {0:N0}°C · {1}' -f [double]$c,$script:state)
+    if($null -eq $script:lastSample -or -not $script:lastSample.Healthy){
+        return (Get-GuardUiText 'home.waiting')
+    }
+    $selected=$script:lastDisplayTemperature
+    $c=if($null -ne $selected -and $selected.Healthy){$selected.MaxC}else{$script:lastSample.TemperatureC}
+    if($null -eq $c){return (Get-GuardUiText 'home.waiting')}
+    $number=([int][math]::Round([double]$c)).ToString([Globalization.CultureInfo]::InvariantCulture)
+    return (Get-GuardUiText 'home.temperature' @($number))
+}
+function Get-GuardModernMode {
+    param([string]$Role)
+    $mode=[string]$script:temperaturePolicy.($Role+'Mode')
+    if($Role -eq 'Shutdown'){
+        $approved=Test-GuardActionSourceApproval -Policy $script:temperaturePolicy -ReceiptPath $script:sourceApprovalPath -ConfigPath $ConfigPath
+        if(-not $approved -or -not (Test-LiveApproval)){
+            return (Get-GuardUiText 'approval.notApproved')
+        }
+    }
+    return (Get-GuardUiText ('mode.'+$mode))
 }
 function New-GuardModernRow {
-    param([string]$Text,[string]$Action='', [string]$Value='', [string]$Role='', [string]$Id='', [switch]$Accent,[switch]$Danger, [int]$Height=45)
-    $button=[Windows.Forms.Button]::new()
-    $button.Width=381
-    $button.Height=$Height
-    $button.FlatStyle=[Windows.Forms.FlatStyle]::Flat
-    $button.FlatAppearance.BorderSize=0
-    $button.FlatAppearance.MouseOverBackColor=$script:modernHover
-    $button.BackColor=if($Accent){[Drawing.ColorTranslator]::FromHtml('#123C68')}else{$script:modernSurface}
-    $button.ForeColor=if($Danger){[Drawing.ColorTranslator]::FromHtml('#FF7171')}elseif($Accent){$script:modernAccent}else{$script:modernText}
-    $button.Font=[Drawing.Font]::new('Segoe UI',[single]10,[Drawing.FontStyle]::Regular)
-    $button.TextAlign=[Drawing.ContentAlignment]::MiddleLeft
-    $button.Padding=[Windows.Forms.Padding]::new(10,0,7,0)
-    $button.Text=$Text
-    $button.Margin=[Windows.Forms.Padding]::new(0,0,0,5)
-    $button.Cursor=[Windows.Forms.Cursors]::Hand
-    $button.Tag=@{Action=$Action;Value=$Value;Role=$Role;Id=$Id}
+    param([string]$Text,[string]$Action='',[string]$Value='',[string]$Role='',[string]$Id='',[switch]$Accent,[switch]$Danger,[switch]$Warning)
+    $btn=[Windows.Forms.Button]::new()
+    $btn.Width=342
+    $btn.Height=$script:modernRowHeight
+    $btn.Font=[Drawing.Font]::new('Segoe UI',[single]9,[Drawing.FontStyle]::Regular)
+    $btn.FlatStyle=[Windows.Forms.FlatStyle]::Flat
+    $btn.FlatAppearance.BorderSize=0
+    $btn.FlatAppearance.MouseOverBackColor=$script:modernHover
+    $btn.BackColor=if($Accent){[Drawing.ColorTranslator]::FromHtml('#163959')}else{$script:modernSurface}
+    $btn.ForeColor=if($Danger){[Drawing.ColorTranslator]::FromHtml('#FF7777')}elseif($Warning){$script:modernWarning}elseif($Accent){$script:modernAccent}else{$script:modernText}
+    $btn.UseMnemonic=$false
+    $btn.AutoEllipsis=$true
+    $btn.TextAlign=[Drawing.ContentAlignment]::MiddleLeft
+    $btn.Padding=[Windows.Forms.Padding]::new(7,0,4,0)
+    $btn.Margin=[Windows.Forms.Padding]::new(0,0,0,1)
+    $btn.Cursor=if($Action){[Windows.Forms.Cursors]::Hand}else{[Windows.Forms.Cursors]::Default}
+    $btn.Text=$Text
+    $btn.AccessibleName=$Text
+    $btn.Tag=@{Action=$Action;Value=$Value;Role=$Role;Id=$Id}
     if($Action){
-        $button.add_Click({
+        $btn.add_Click({
             param($sender,$e)
             try{
-                $args=$sender.Tag
-                Invoke-GuardModernAction -Action ([string]$args.Action) -Value ([string]$args.Value) -Role ([string]$args.Role) -Id ([string]$args.Id)
+                $a=$sender.Tag
+                Invoke-GuardModernAction -Action ([string]$a.Action) -Value ([string]$a.Value) -Role ([string]$a.Role) -Id ([string]$a.Id)
             }catch{
                 Write-GuardEvent 'ModernMenuActionError' @{Message=$_.Exception.Message}
-                [Windows.Forms.MessageBox]::Show('Операция не выполнена: '+$_.Exception.Message,'uTempGuard')|Out-Null
+                $errorMessage=Get-GuardUiText 'error.action' @($_.Exception.Message)
+                [Windows.Forms.MessageBox]::Show($errorMessage,'uTempGuard')|Out-Null
             }
         })
-    }else{$button.Enabled=$false}
-    return $button
+    }
+    return $btn
 }
 function Add-GuardModernRow {
-    param([string]$Text,[string]$Action='', [string]$Value='', [string]$Role='', [string]$Id='', [switch]$Accent,[switch]$Danger,[int]$Height=45)
-    $row=New-GuardModernRow -Text $Text -Action $Action -Value $Value -Role $Role -Id $Id -Accent:$Accent -Danger:$Danger -Height $Height
-    [void]$script:modernBody.Controls.Add($row)
+    param([string]$Text,[string]$Action='',[string]$Value='',[string]$Role='',[string]$Id='',[switch]$Accent,[switch]$Danger,[switch]$Warning)
+    $btn=New-GuardModernRow -Text $Text -Action $Action -Value $Value -Role $Role -Id $Id -Accent:$Accent -Danger:$Danger -Warning:$Warning
+    [void]$script:modernBody.Controls.Add($btn)
 }
 function Add-GuardModernSeparator {
     $line=[Windows.Forms.Panel]::new()
-    $line.Width=381;$line.Height=1
+    $line.Width=342
+    $line.Height=1
+    $line.Margin=[Windows.Forms.Padding]::new(0,3,0,4)
     $line.BackColor=[Drawing.ColorTranslator]::FromHtml('#34445C')
-    $line.Margin=[Windows.Forms.Padding]::new(0,6,0,10)
     [void]$script:modernBody.Controls.Add($line)
 }
-function Get-GuardModernModeDescription {
-    param([string]$Role)
-    $mode=[string]$script:temperaturePolicy.($Role+'Mode')
-    $title=Get-GuardSourceTitle -Mode $mode
-    if($Role -eq 'Display'){return $title}
-    $approved=Test-GuardActionSourceApproval -Policy $script:temperaturePolicy -ReceiptPath $script:sourceApprovalPath -ConfigPath $ConfigPath
-    if(-not $approved -or -not (Test-LiveApproval)){return 'НЕТ ДОПУСКА · '+$title}
-    return 'Активно · '+$title
+function Set-GuardModernRoundedRegion {
+    param([Windows.Forms.Form]$Form)
+    $width=$Form.ClientSize.Width;$height=$Form.ClientSize.Height
+    $diameter=26
+    $path=[Drawing.Drawing2D.GraphicsPath]::new()
+    try{
+        $path.AddArc(0,0,$diameter,$diameter,180,90)
+        $path.AddArc($width-$diameter-1,0,$diameter,$diameter,270,90)
+        $path.AddArc($width-$diameter-1,$height-$diameter-1,$diameter,$diameter,0,90)
+        $path.AddArc(0,$height-$diameter-1,$diameter,$diameter,90,90)
+        $path.CloseFigure()
+        $region=[Drawing.Region]::new($path)
+        $old=$Form.Region
+        $Form.Region=$region
+        if($null -ne $old){$old.Dispose()}
+    }finally{$path.Dispose()}
+}
+function Get-GuardModernPageMetrics {
+    param([int]$WorkingHeight=720)
+    $content=16
+    if($null -ne $script:modernBody){
+        foreach($ctl in $script:modernBody.Controls){
+            $content+=[int]$ctl.Height+[int]$ctl.Margin.Top+[int]$ctl.Margin.Bottom
+        }
+    }
+    $maximum=[math]::Max(140,$WorkingHeight-16)
+    $desired=$content+$script:modernHeaderHeight+$script:modernFooterHeight
+    $height=[int][math]::Min($maximum,[math]::Max(142,$desired))
+    [pscustomobject]@{Height=$height;ContentHeight=$content;AvailableContentHeight=$height-$script:modernHeaderHeight-$script:modernFooterHeight;Overflow=($desired -gt $maximum);Controls=$(if($null -eq $script:modernBody){0}else{$script:modernBody.Controls.Count})}
+}
+function Update-GuardModernLayout {
+    if($null -eq $script:modernMenu){return}
+    $area=[Windows.Forms.Screen]::FromPoint([Windows.Forms.Cursor]::Position).WorkingArea
+    $metrics=Get-GuardModernPageMetrics -WorkingHeight $area.Height
+    $script:modernMenu.ClientSize=[Drawing.Size]::new($script:modernWidth,$metrics.Height)
+    # AutoScroll is a fallback on exceptionally small screens only.
+    $script:modernBody.AutoScroll=$metrics.Overflow
+    Set-GuardModernRoundedRegion -Form $script:modernMenu
+    if($script:modernMenu.Visible){
+        $pt=$script:modernMenu.Location
+        $x=[math]::Max($area.Left,[math]::Min($pt.X,$area.Right-$script:modernMenu.Width))
+        $y=[math]::Max($area.Top,[math]::Min($pt.Y,$area.Bottom-$script:modernMenu.Height))
+        $script:modernMenu.Location=[Drawing.Point]::new([int]$x,[int]$y)
+    }
 }
 function Render-GuardModernPage {
-    param([string]$Page='Home',[string]$Role='Display')
+    param([string]$Page='Home')
     if($null -eq $script:modernMenu -or $null -eq $script:modernBody){return}
     $script:modernPage=$Page
     $script:modernBody.SuspendLayout()
     try{
-        $prior=@($script:modernBody.Controls)
+        $previous=@($script:modernBody.Controls)
         $script:modernBody.Controls.Clear()
-        foreach($ctl in $prior){$ctl.Dispose()}
+        foreach($item in $previous){$item.Dispose()}
         if($Page -ne 'Home'){
-            Add-GuardModernRow -Text '‹  НАЗАД' -Action 'Page' -Value 'Home' -Accent
+            $back=if($Page -like 'DisplayCustom'){'Display'}
+                elseif($Page -like 'ShutdownCustom'){'Shutdown'}
+                elseif($Page -in @('Opacity','Positions')){'Appearance'}
+                else{'Home'}
+            Add-GuardModernRow -Text (Get-GuardUiText 'nav.back') -Action 'Page' -Value $back -Accent
             Add-GuardModernSeparator
         }
         switch($Page){
             'Home' {
-                Add-GuardModernRow -Text ('◉  '+(Get-GuardModernSummaryText)) -Action 'Page' -Value 'Sensors' -Accent
-                $sensorCount=if($null -ne $script:lastCpuSummary){'{0}/{1}' -f $script:lastCpuSummary.AvailableCount,$script:lastCpuSummary.ExpectedCount}else{'нет данных'}
-                Add-GuardModernRow -Text ('▥  Датчики процессора  ·  '+$sensorCount+'    ›') -Action 'Page' -Value 'Sensors'
+                Add-GuardModernRow -Text (Get-GuardModernSummaryText) -Action 'Page' -Value 'Sensors' -Accent
+                $count=if($null -ne $script:lastCpuSummary){
+                    Get-GuardUiText 'home.sensors' @($script:lastCpuSummary.AvailableCount,$script:lastCpuSummary.ExpectedCount)
+                }else{Get-GuardUiText 'home.sensorsMissing'}
+                Add-GuardModernRow -Text $count -Action 'Page' -Value 'Sensors'
                 Add-GuardModernSeparator
-                Add-GuardModernRow -Text ('◉  ПОКАЗЫВАТЬ ЧТО  ›'+[Environment]::NewLine+'      '+(Get-GuardModernModeDescription -Role Display)) -Action 'Page' -Value 'Display' -Height 62
-                Add-GuardModernRow -Text ('⏻  ВЫКЛЮЧАТЬ ПК ПО ТЕМПЕРАТУРЕ  ›'+[Environment]::NewLine+'      '+(Get-GuardModernModeDescription -Role Shutdown)) -Action 'Page' -Value 'Shutdown' -Height 68
+                Add-GuardModernRow -Text (Get-GuardUiText 'home.display' @((Get-GuardModernMode Display))) -Action 'Page' -Value 'Display'
+                $powerStatus=Get-GuardModernMode Shutdown
+                Add-GuardModernRow -Text (Get-GuardUiText 'home.shutdown' @($powerStatus)) -Action 'Page' -Value 'Shutdown' -Warning:($powerStatus -eq (Get-GuardUiText 'approval.notApproved'))
                 Add-GuardModernSeparator
-                $style=if($script:overlaySettings.Style -eq 'Compact'){'Компактный'}else{'Полный'}
-                Add-GuardModernRow -Text ('▣  Вид индикатора  ·  '+$style+'    ›') -Action 'Page' -Value 'Style'
-                Add-GuardModernRow -Text ('◉  Показывать фон  ·  '+$(if($script:overlaySettings.ShowBackground){'ВКЛ'}else{'ВЫКЛ'})) -Action 'ToggleBackground'
-                Add-GuardModernRow -Text ('◉  Показывать индикатор  ·  '+$(if($script:overlaySettings.Visible){'ВКЛ'}else{'ВЫКЛ'})) -Action 'ToggleVisible'
-                Add-GuardModernRow -Text '◈  Прозрачность и положение  ›' -Action 'Page' -Value 'Appearance'
-                Add-GuardModernRow -Text 'A+  Увеличить шрифт' -Action 'Font' -Value 'Increase'
-                Add-GuardModernRow -Text 'A−  Уменьшить шрифт' -Action 'Font' -Value 'Decrease'
+                $style=Get-GuardUiText ('appearance.style'+$(if($script:overlaySettings.Style -eq 'Compact'){'Compact'}else{'Full'}))
+                Add-GuardModernRow -Text (Get-GuardUiText 'home.appearance' @($style)) -Action 'Page' -Value 'Appearance'
+                $lang=Get-GuardCurrentLanguage
+                Add-GuardModernRow -Text (Get-GuardUiText 'home.language' @((Get-GuardUiText ('language.'+$lang)))) -Action 'Page' -Value 'Language'
                 Add-GuardModernSeparator
-                Add-GuardModernRow -Text '⌂  О проекте · GitHub ↗' -Action 'OpenUrl' -Value 'https://github.com/sunpole/uTempGuard'
-                Add-GuardModernRow -Text '↓  Последний релиз ↗' -Action 'OpenUrl' -Value 'https://github.com/sunpole/uTempGuard/releases/latest'
-                Add-GuardModernRow -Text '↻  Проверить обновления (только проверка)' -Action 'CheckUpdates'
-                if(-not [bool]$SimulationPath){Add-GuardModernRow -Text '↓  Установить обновление (с подтверждением)' -Action 'ApplyUpdate'}
-                Add-GuardModernRow -Text 'ⓘ  Сведения о программе  ›' -Action 'Page' -Value 'About'
+                Add-GuardModernRow -Text (Get-GuardUiText 'home.project') -Action 'OpenUrl' -Value 'https://github.com/sunpole/uTempGuard'
+                Add-GuardModernRow -Text (Get-GuardUiText 'home.updates') -Action 'Page' -Value 'Updates'
+                Add-GuardModernRow -Text (Get-GuardUiText 'home.about') -Action 'Page' -Value 'About'
                 Add-GuardModernSeparator
-                Add-GuardModernRow -Text '⏻  Остановить uTempGuard' -Action 'Stop' -Danger
+                Add-GuardModernRow -Text (Get-GuardUiText 'home.stop') -Action 'Stop' -Danger
             }
+            'Display' {Show-GuardModernModes -Role Display}
+            'Shutdown' {Show-GuardModernModes -Role Shutdown}
+            'DisplayCustom' {Show-GuardModernCustomSensors -Role Display}
+            'ShutdownCustom' {Show-GuardModernCustomSensors -Role Shutdown}
             'Sensors' {
-                Add-GuardModernRow -Text 'ДАТЧИКИ ПРОЦЕССОРА'
+                Add-GuardModernRow -Text (Get-GuardUiText 'page.sensors')
                 if($null -eq $script:lastCpuSummary){
-                    Add-GuardModernRow -Text 'Ожидание достоверных показаний AIDA64'
+                    Add-GuardModernRow -Text (Get-GuardUiText 'option.noSensors')
                 }else{
                     foreach($sensor in $script:lastCpuSummary.Sensors){
-                        $t=if($sensor.State -eq 'Valid'){('{0:N0}°C' -f $sensor.TemperatureC)}else{$sensor.State}
-                        Add-GuardModernRow -Text ('    '+$sensor.Label+'  ·  '+$t)
+                        $reading=if($sensor.State -eq 'Valid'){('{0:N0}°C' -f $sensor.TemperatureC)}
+                            else{Get-GuardUiText 'option.invalid'}
+                        Add-GuardModernRow -Text ('  '+$sensor.Label+' · '+$reading)
                     }
                 }
-            }
-            {$_ -in @('Display','Shutdown')} {
-                $role=$Page
-                Add-GuardModernRow -Text $(if($role -eq 'Display'){'ПОКАЗЫВАТЬ ЧТО:'}else{'ВЫКЛЮЧАТЬ ПК ПО ТЕМПЕРАТУРЕ:'})
-                $mode=[string]$script:temperaturePolicy.($role+'Mode')
-                foreach($o in @(
-                    @{K='All';T='1. Всё, что экспортирует AIDA64'},
-                    @{K='Cores';T='2. Максимум всех ядер'},
-                    @{K='CoresCpu';T='3. Ядра + ЦП'},
-                    @{K='CoresCpuPackage';T='4. Ядра + ЦП + CPU Package'},
-                    @{K='LegacyCpu';T='↺  Как раньше: Package + ядра'}
-                )){
-                    $tick=if($mode -eq $o.K){'●'}else{'○'}
-                    Add-GuardModernRow -Text ($tick+'  '+$o.T) -Action 'ChooseMode' -Value $o.K -Role $role -Accent:($mode -eq $o.K)
-                }
-                $tick=if($mode -eq 'Custom'){'●'}else{'○'}
-                Add-GuardModernRow -Text ($tick+'  5. Свой набор датчиков (галочки)  ›') -Action 'Page' -Value ($role+'Custom') -Accent:($mode -eq 'Custom')
-                if($role -eq 'Shutdown'){
-                    Add-GuardModernSeparator
-                    $ready=Test-GuardActionSourceApproval -Policy $script:temperaturePolicy -ReceiptPath $script:sourceApprovalPath -ConfigPath $ConfigPath
-                    $info=if($ready -and (Test-LiveApproval)){'✓ Источник выключения подтверждён'}else{'⚠ Нужен отдельный допуск'}
-                    Add-GuardModernRow -Text $info
-                    if($mode -notin @('LegacyCpu','Disabled')){
-                        Add-GuardModernRow -Text '✓  Подтвердить выбранные датчики' -Action 'ConfirmSource' -Accent
-                    }
-                    Add-GuardModernRow -Text 'Выключение при 75°C требует живых датчиков.'
-                }
-            }
-            {$_ -in @('DisplayCustom','ShutdownCustom')} {
-                $role=if($Page -eq 'DisplayCustom'){'Display'}else{'Shutdown'}
-                Add-GuardModernRow -Text ('ВЫБРАТЬ ДАТЧИКИ · '+$role)
-                if($null -eq $script:lastTemperatureCatalog -or -not $script:lastTemperatureCatalog.Healthy){
-                    Add-GuardModernRow -Text 'Ожидание достоверного экспорта AIDA64'
-                }else{
-                    foreach($sensor in @($script:lastTemperatureCatalog.Sensors | Sort-Object Category,Id)){
-                        $checked=($script:temperaturePolicy.($role+'Mode') -eq 'Custom' -and $sensor.Id -cin @($script:temperaturePolicy.($role+'Ids')))
-                        $sign=if($checked){'☑'}else{'☐'}
-                        $temp=if($sensor.State -eq 'Valid'){('{0:N0}°C' -f $sensor.TemperatureC)}else{'недоступен'}
-                        Add-GuardModernRow -Text ($sign+'  '+$sensor.Label+' · '+$temp) -Action 'ToggleSensor' -Role $role -Id $sensor.Id -Accent:$checked
-                    }
-                }
-            }
-            'Style' {
-                Add-GuardModernRow -Text 'ВИД ИНДИКАТОРА'
-                Add-GuardModernRow -Text '▣  Компактный' -Action 'Style' -Value 'Compact' -Accent:($script:overlaySettings.Style -eq 'Compact')
-                Add-GuardModernRow -Text '▤  Полный' -Action 'Style' -Value 'Full' -Accent:($script:overlaySettings.Style -eq 'Full')
             }
             'Appearance' {
-                Add-GuardModernRow -Text 'НЕПРОЗРАЧНОСТЬ'
-                foreach($opacity in @(60,80,90,100)){
-                    Add-GuardModernRow -Text ('▤  '+$opacity+'%') -Action 'Opacity' -Value ([string]$opacity) -Accent:($script:overlaySettings.Opacity -eq $opacity)
+                Add-GuardModernRow -Text (Get-GuardUiText 'page.appearance')
+                foreach($style in @('Compact','Full')){
+                    $text=Get-GuardUiText ('appearance.style'+$style)
+                    Add-GuardModernRow -Text ('  '+$text) -Action 'Style' -Value $style -Accent:($script:overlaySettings.Style -eq $style)
                 }
                 Add-GuardModernSeparator
-                Add-GuardModernRow -Text 'ПОЛОЖЕНИЕ ИНДИКАТОРА'
-                foreach($p in @(
-                   @{K='TopRight';T='Справа сверху'},
-                   @{K='TopLeft';T='Слева сверху'},
-                   @{K='BottomRight';T='Справа снизу'},
-                   @{K='BottomLeft';T='Слева снизу'}
-                )){
-                   Add-GuardModernRow -Text ('◈  '+$p.T) -Action 'Position' -Value $p.K -Accent:($script:overlaySettings.Position -eq $p.K)
+                $back=Get-GuardUiText 'appearance.showBackground'
+                $shown=Get-GuardUiText $(if($script:overlaySettings.ShowBackground){'nav.on'}else{'nav.off'})
+                Add-GuardModernRow -Text ($back+' · '+$shown) -Action 'ToggleBackground'
+                $label=Get-GuardUiText 'appearance.showIndicator'
+                $shown=Get-GuardUiText $(if($script:overlaySettings.Visible){'nav.on'}else{'nav.off'})
+                Add-GuardModernRow -Text ($label+' · '+$shown) -Action 'ToggleVisible'
+                Add-GuardModernRow -Text (Get-GuardUiText 'appearance.opacity') -Action 'Page' -Value 'Opacity'
+                Add-GuardModernRow -Text (Get-GuardUiText 'appearance.position') -Action 'Page' -Value 'Positions'
+                Add-GuardModernSeparator
+                Add-GuardModernRow -Text (Get-GuardUiText 'appearance.fontUp') -Action 'Font' -Value 'Increase'
+                Add-GuardModernRow -Text (Get-GuardUiText 'appearance.fontDown') -Action 'Font' -Value 'Decrease'
+            }
+            'Opacity' {
+                Add-GuardModernRow -Text (Get-GuardUiText 'page.opacity')
+                foreach($percentage in @(60,80,90,100)){
+                    Add-GuardModernRow -Text ($percentage.ToString()+'%') -Action 'Opacity' -Value ([string]$percentage) -Accent:($script:overlaySettings.Opacity -eq $percentage)
                 }
+            }
+            'Positions' {
+                Add-GuardModernRow -Text (Get-GuardUiText 'page.positions')
+                foreach($mode in @('TopRight','TopLeft','BottomRight','BottomLeft')){
+                    Add-GuardModernRow -Text (Get-GuardUiText ('appearance.positions.'+$mode.Substring(0,1).ToLowerInvariant()+$mode.Substring(1))) -Action 'Position' -Value $mode -Accent:($script:overlaySettings.Position -eq $mode)
+                }
+            }
+            'Language' {
+                Add-GuardModernRow -Text (Get-GuardUiText 'page.language')
+                foreach($locale in @(Get-GuardSupportedLanguages)){
+                    Add-GuardModernRow -Text (Get-GuardUiText ('language.'+$locale)) -Action 'SetLanguage' -Value $locale -Accent:((Get-GuardCurrentLanguage) -ceq $locale)
+                }
+                Add-GuardModernRow -Text (Get-GuardUiText 'language.hint')
+            }
+            'Updates' {
+                Add-GuardModernRow -Text (Get-GuardUiText 'page.updates')
+                Add-GuardModernRow -Text (Get-GuardUiText 'updates.check') -Action 'CheckUpdates'
+                if(-not [bool]$SimulationPath){
+                    Add-GuardModernRow -Text (Get-GuardUiText 'updates.apply') -Action 'ApplyUpdate'
+                }
+                Add-GuardModernRow -Text (Get-GuardUiText 'updates.release') -Action 'OpenUrl' -Value 'https://github.com/sunpole/uTempGuard/releases/latest'
+                Add-GuardModernRow -Text (Get-GuardUiText 'updates.docs') -Action 'OpenUrl' -Value 'https://github.com/sunpole/uTempGuard#readme'
+                Add-GuardModernRow -Text (Get-GuardUiText 'updates.manual')
             }
             'About' {
-                Add-GuardModernRow -Text 'uTempGuard v0.3.0 · современное меню'
-                Add-GuardModernRow -Text 'Официальный логотип из SVG пользователя.'
-                Add-GuardModernRow -Text 'Раздельные источники: показ и выключение.'
-                Add-GuardModernRow -Text 'Проверенные датчики AIDA64 · PowerShell 5.1'
-                Add-GuardModernSeparator
-                Add-GuardModernRow -Text 'GitHub · исходники и история ↗' -Action 'OpenUrl' -Value 'https://github.com/sunpole/uTempGuard'
-                Add-GuardModernRow -Text 'Последний выпуск ↗' -Action 'OpenUrl' -Value 'https://github.com/sunpole/uTempGuard/releases/latest'
-                Add-GuardModernRow -Text 'Документация ↗' -Action 'OpenUrl' -Value 'https://github.com/sunpole/uTempGuard#readme'
+                Add-GuardModernRow -Text (Get-GuardUiText 'page.about')
+                foreach($key in @('about.version','about.details','about.brand','about.sources')){
+                    Add-GuardModernRow -Text (Get-GuardUiText $key)
+                }
+                Add-GuardModernRow -Text (Get-GuardUiText 'about.github') -Action 'OpenUrl' -Value 'https://github.com/sunpole/uTempGuard'
+                Add-GuardModernRow -Text (Get-GuardUiText 'about.release') -Action 'OpenUrl' -Value 'https://github.com/sunpole/uTempGuard/releases/latest'
+                Add-GuardModernRow -Text (Get-GuardUiText 'about.docs') -Action 'OpenUrl' -Value 'https://github.com/sunpole/uTempGuard#readme'
             }
+            default {Add-GuardModernRow -Text (Get-GuardUiText 'option.noData')}
         }
-    } finally{
+    }finally{
         $script:modernBody.ResumeLayout()
+        Update-GuardModernLayout
+    }
+}
+function Show-GuardModernModes {
+    param([string]$Role)
+    $mode=[string]$script:temperaturePolicy.($Role+'Mode')
+    Add-GuardModernRow -Text (Get-GuardUiText $(if($Role -eq 'Display'){'page.display'}else{'page.shutdown'}))
+    foreach($option in @('All','Cores','CoresCpu','CoresCpuPackage','Custom','LegacyCpu')){
+        $label=Get-GuardUiText ('option.'+$(if($option -eq 'LegacyCpu'){'legacy'}else{$option.Substring(0,1).ToLowerInvariant()+$option.Substring(1)}))
+        if($option -eq 'Custom'){
+            Add-GuardModernRow -Text ('☑  '+$label) -Action 'Page' -Value ($Role+'Custom') -Accent:($mode -eq $option)
+        }else{
+            Add-GuardModernRow -Text ('◉  '+$label) -Action 'ChooseMode' -Value $option -Role $Role -Accent:($mode -eq $option)
+        }
+    }
+    if($Role -eq 'Shutdown'){
+        Add-GuardModernSeparator
+        $approved=Test-GuardActionSourceApproval -Policy $script:temperaturePolicy -ReceiptPath $script:sourceApprovalPath -ConfigPath $ConfigPath
+        $active=$approved -and (Test-LiveApproval)
+        Add-GuardModernRow -Text (Get-GuardUiText $(if($active){'approval.active'}else{'approval.notApproved'})) -Warning:(-not $active)
+        if($mode -notin @('LegacyCpu','Disabled')){
+            Add-GuardModernRow -Text (Get-GuardUiText 'approval.confirm') -Action 'ConfirmSource' -Accent
+        }
+    }
+}
+function Show-GuardModernCustomSensors {
+    param([string]$Role)
+    Add-GuardModernRow -Text (Get-GuardUiText $(if($Role -eq 'Display'){'page.customDisplay'}else{'page.customShutdown'}))
+    if($null -eq $script:lastTemperatureCatalog -or -not $script:lastTemperatureCatalog.Healthy){
+        Add-GuardModernRow -Text (Get-GuardUiText 'option.noSensors')
+        return
+    }
+    $all=@($script:lastTemperatureCatalog.Sensors | Sort-Object Category,Id)
+    if($all.Count -eq 0){Add-GuardModernRow -Text (Get-GuardUiText 'option.noSensors');return}
+    $totalPages=[int][math]::Ceiling($all.Count/[double]$script:modernPageSize)
+    $script:modernSensorPage=[int][math]::Max(0,[math]::Min($script:modernSensorPage,$totalPages-1))
+    $first=$script:modernSensorPage*$script:modernPageSize
+    $last=[math]::Min($all.Count-1,$first+$script:modernPageSize-1)
+    for($i=$first;$i -le $last;$i++){
+        $sensor=$all[$i]
+        $checked=$script:temperaturePolicy.($Role+'Mode') -eq 'Custom' -and
+            $sensor.Id -cin @($script:temperaturePolicy.($Role+'Ids'))
+        $tick=if($checked){'[x]'}else{'[ ]'}
+        $reading=if($sensor.State -eq 'Valid'){('{0:N0}°C' -f $sensor.TemperatureC)}
+          else{Get-GuardUiText 'option.invalid'}
+        Add-GuardModernRow -Text ($tick+' '+$sensor.Label+' · '+$reading) -Action 'ToggleSensor' -Role $Role -Id ([string]$sensor.Id) -Accent:$checked
+    }
+    if($totalPages -gt 1){
+        Add-GuardModernSeparator
+        if($script:modernSensorPage -gt 0){
+            Add-GuardModernRow -Text ('‹ '+($script:modernSensorPage).ToString()+'/'+$totalPages) -Action 'SensorPage' -Value '-1'
+        }
+        if($script:modernSensorPage -lt ($totalPages-1)){
+            Add-GuardModernRow -Text ('› '+($script:modernSensorPage+2).ToString()+'/'+$totalPages) -Action 'SensorPage' -Value '1'
+        }
     }
 }
 function Invoke-GuardModernAction {
     param([string]$Action,[string]$Value='',[string]$Role='',[string]$Id='')
     switch($Action){
-        'Page' {Render-GuardModernPage -Page $Value; return}
+        'Page' {
+            if($Value -in @('DisplayCustom','ShutdownCustom')){$script:modernSensorPage=0}
+            Render-GuardModernPage -Page $Value;return
+        }
+        'SensorPage' {
+            $script:modernSensorPage+=[int]::Parse($Value)
+            Render-GuardModernPage -Page $script:modernPage;return
+        }
+        'SetLanguage' {
+            $null=Set-GuardLanguage -Locale $Value
+            if($null -ne $script:modernSubtitle){$script:modernSubtitle.Text=Get-GuardUiText 'app.tagline'}
+            Render-GuardModernPage -Page $script:modernPage;return
+        }
         'ToggleBackground' {Set-GuardOverlayPreference -Name ShowBackground -Value (-not $script:overlaySettings.ShowBackground)}
         'ToggleVisible' {Set-GuardOverlayPreference -Name Visible -Value (-not $script:overlaySettings.Visible)}
         'Font' {
             $delta=if($Value -eq 'Increase'){1}else{-1}
-            Set-GuardOverlayPreference -Name FontSize -Value ([int]$script:overlaySettings.FontSize+$delta)
+            $size=[math]::Max(9,[math]::Min(22,[int]$script:overlaySettings.FontSize+$delta))
+            Set-GuardOverlayPreference -Name FontSize -Value $size
         }
         'Style' {Set-GuardOverlayPreference -Name Style -Value $Value}
         'Opacity' {Set-GuardOverlayPreference -Name Opacity -Value ([int]::Parse($Value))}
@@ -239,7 +363,7 @@ function Invoke-GuardModernAction {
         }
         'ToggleSensor' {
             $script:modernModal=$true
-            try{Set-GuardSourceChoice -Role $Role -Mode 'Custom' -Id $Id}
+            try{Set-GuardSourceChoice -Role $Role -Mode Custom -Id $Id}
             finally{$script:modernModal=$false}
         }
         'ConfirmSource' {
@@ -247,163 +371,128 @@ function Invoke-GuardModernAction {
             try{Confirm-GuardActionSource}
             finally{$script:modernModal=$false}
         }
-        'ApplyUpdate' {
-            if([bool]$SimulationPath){return}
-            $updater=Join-Path $PSScriptRoot '..\Update-uTempGuard.ps1'
-            if(-not (Test-Path -LiteralPath $updater -PathType Leaf)){throw 'Updater не найден'}
-            $ps=Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
-            $arguments='-NoExit -NoProfile -ExecutionPolicy Bypass -File "'+[IO.Path]::GetFullPath($updater)+'" -Action Apply'
-            Start-Process -FilePath $ps -ArgumentList $arguments
-            if($null -ne $script:modernMenu){$script:modernMenu.Hide()}
-            return
-        }
-        'CheckUpdates' {
-            $updater=Join-Path $PSScriptRoot '..\Update-uTempGuard.ps1'
-            if(-not (Test-Path -LiteralPath $updater -PathType Leaf)){throw 'Updater не найден'}
-            $ps=Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
-            $arguments='-NoExit -NoProfile -ExecutionPolicy Bypass -File "'+[IO.Path]::GetFullPath($updater)+'" -Action Preview'
-            Start-Process -FilePath $ps -ArgumentList $arguments
-            if($null -ne $script:modernMenu){$script:modernMenu.Hide()}
-            return
-        }
+        'CheckUpdates' {Start-GuardUpdater -Mode Preview;return}
+        'ApplyUpdate' {if(-not [bool]$SimulationPath){Start-GuardUpdater -Mode Apply};return}
         'OpenUrl' {
-            if($Value -notin @(
-                'https://github.com/sunpole/uTempGuard',
+            if($Value -notin @('https://github.com/sunpole/uTempGuard',
                 'https://github.com/sunpole/uTempGuard/releases/latest',
                 'https://github.com/sunpole/uTempGuard#readme')){return}
             Start-Process -FilePath $Value
-            if($null -ne $script:modernMenu){$script:modernMenu.Hide()}
-            return
+            $script:modernMenu.Hide();return
         }
-        'Stop' {
-            [IO.File]::WriteAllText($stopPath,'stop')
-            if($null -ne $script:modernMenu){$script:modernMenu.Hide()}
-            return
-        }
+        'Stop' {[IO.File]::WriteAllText($stopPath,'stop');$script:modernMenu.Hide();return}
         default {return}
     }
     if($null -ne $script:modernMenu){Render-GuardModernPage -Page $script:modernPage}
 }
+function Start-GuardUpdater {
+    param([ValidateSet('Preview','Apply')][string]$Mode)
+    $updater=Join-Path $PSScriptRoot '..\Update-uTempGuard.ps1'
+    if(-not (Test-Path -LiteralPath $updater -PathType Leaf)){throw (Get-GuardUiText 'error.updaterMissing')}
+    $exe=Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $args='-NoExit -NoProfile -ExecutionPolicy Bypass -File "'+[IO.Path]::GetFullPath($updater)+'" -Action '+$Mode
+    Start-Process -FilePath $exe -ArgumentList $args
+    if($null -ne $script:modernMenu){$script:modernMenu.Hide()}
+}
 function Show-GuardModernMenu {
     if($null -eq $script:modernMenu){return}
-    if($script:modernMenu.Visible){
-        $script:modernMenu.Hide()
-        return
-    }
-    Render-GuardModernPage -Page 'Home'
+    if($script:modernMenu.Visible){$script:modernMenu.Hide();return}
+    Render-GuardModernPage -Page Home
     $cursor=[Windows.Forms.Cursor]::Position
     $area=[Windows.Forms.Screen]::FromPoint($cursor).WorkingArea
-    $x=[math]::Max($area.Left,[math]::Min($cursor.X-400,$area.Right-$script:modernMenu.Width))
-    $y=[math]::Max($area.Top,[math]::Min($cursor.Y-$script:modernMenu.Height+15,$area.Bottom-$script:modernMenu.Height))
+    $x=[math]::Max($area.Left,[math]::Min($cursor.X-$script:modernMenu.Width+20,$area.Right-$script:modernMenu.Width))
+    $y=[math]::Max($area.Top,[math]::Min($cursor.Y-$script:modernMenu.Height+12,$area.Bottom-$script:modernMenu.Height))
     $script:modernMenu.Location=[Drawing.Point]::new([int]$x,[int]$y)
     $script:modernMenu.Show()
     $script:modernMenu.Activate()
 }
-function Set-GuardModernRoundedRegion {
-    param([Windows.Forms.Form]$Form)
-    $radius=16
-    $edge=$radius*2
-    $width=$Form.ClientSize.Width
-    $height=$Form.ClientSize.Height
-    $path=[Drawing.Drawing2D.GraphicsPath]::new()
-    try{
-        $path.AddArc(0,0,$edge,$edge,180,90)
-        $path.AddArc($width-$edge-1,0,$edge,$edge,270,90)
-        $path.AddArc($width-$edge-1,$height-$edge-1,$edge,$edge,0,90)
-        $path.AddArc(0,$height-$edge-1,$edge,$edge,90,90)
-        $path.CloseFigure()
-        $region=[Drawing.Region]::new($path)
-        $old=$Form.Region
-        $Form.Region=$region
-        if($null -ne $old){$old.Dispose()}
-    }finally{$path.Dispose()}
-}
 function Initialize-GuardModernMenu {
-    # Keep the old standard context menu as a fallback if this UI initialization fails.
     $form=[Windows.Forms.Form]::new()
     $form.FormBorderStyle=[Windows.Forms.FormBorderStyle]::None
     $form.StartPosition=[Windows.Forms.FormStartPosition]::Manual
     $form.ShowInTaskbar=$false
     $form.TopMost=$true
+    $form.AutoScaleMode=[Windows.Forms.AutoScaleMode]::None
     $form.BackColor=$script:modernDark
     $form.ForeColor=$script:modernText
-    $form.ClientSize=[Drawing.Size]::new(415,625)
-    Set-GuardModernRoundedRegion -Form $form
+    $form.ClientSize=[Drawing.Size]::new($script:modernWidth,400)
     $form.KeyPreview=$true
-    $form.add_KeyDown({param($sender,$e) if($e.KeyCode -eq [Windows.Forms.Keys]::Escape){$sender.Hide()}})
+    $form.add_KeyDown({param($s,$e) if($e.KeyCode -eq [Windows.Forms.Keys]::Escape){$s.Hide()}})
     $form.add_Deactivate({if(-not $script:modernModal){$script:modernMenu.Hide()}})
     $header=[Windows.Forms.Panel]::new()
     $header.Dock='Top'
-    $header.Height=87
+    $header.Height=$script:modernHeaderHeight
     $header.BackColor=[Drawing.ColorTranslator]::FromHtml('#17263D')
     [void]$form.Controls.Add($header)
     $logo=Get-GuardOfficialLogo
     if($null -ne $logo){
-        $picture=[Windows.Forms.PictureBox]::new()
-        $picture.Image=$logo
-        $picture.SizeMode=[Windows.Forms.PictureBoxSizeMode]::Zoom
-        $picture.Bounds=[Drawing.Rectangle]::new(16,12,58,58)
-        [void]$header.Controls.Add($picture)
+        $iconbox=[Windows.Forms.PictureBox]::new()
+        $iconbox.Image=$logo
+        $iconbox.SizeMode=[Windows.Forms.PictureBoxSizeMode]::Zoom
+        $iconbox.Bounds=[Drawing.Rectangle]::new(9,5,45,45)
+        [void]$header.Controls.Add($iconbox)
     }
     $title=[Windows.Forms.Label]::new()
     $title.Text='uTempGuard'
     $title.ForeColor=$script:modernText
-    $title.Font=[Drawing.Font]::new('Segoe UI',[single]17,[Drawing.FontStyle]::Bold)
-    $title.Bounds=[Drawing.Rectangle]::new(86,10,315,36)
+    $title.Font=[Drawing.Font]::new('Segoe UI',[single]14,[Drawing.FontStyle]::Bold)
+    $title.Bounds=[Drawing.Rectangle]::new(62,5,298,27)
     [void]$header.Controls.Add($title)
     $subtitle=[Windows.Forms.Label]::new()
+    $subtitle.Text=Get-GuardUiText 'app.tagline'
     $subtitle.ForeColor=$script:modernMuted
-    $subtitle.Text='Контроль температур · Защита системы'
-    $subtitle.Font=[Drawing.Font]::new('Segoe UI',[single]9)
-    $subtitle.Bounds=[Drawing.Rectangle]::new(88,48,300,24)
+    $subtitle.Font=[Drawing.Font]::new('Segoe UI',[single]8)
+    $subtitle.Bounds=[Drawing.Rectangle]::new(64,29,296,18)
     [void]$header.Controls.Add($subtitle)
+    $script:modernSubtitle=$subtitle
     $footer=[Windows.Forms.Panel]::new()
     $footer.Dock='Bottom'
-    $footer.Height=30
+    $footer.Height=$script:modernFooterHeight
     $footer.BackColor=$script:modernDark
-    $copyright=[Windows.Forms.Label]::new()
-    $copyright.ForeColor=$script:modernMuted
-    $copyright.Text='uTempGuard  ·  GitHub  ·  Esc — закрыть'
-    $copyright.TextAlign=[Drawing.ContentAlignment]::MiddleCenter
-    $copyright.Dock='Fill'
-    [void]$footer.Controls.Add($copyright)
+    $tip=[Windows.Forms.Label]::new()
+    $tip.Text='uTempGuard · github.com/sunpole/uTempGuard'
+    $tip.ForeColor=$script:modernMuted
+    $tip.TextAlign=[Drawing.ContentAlignment]::MiddleCenter
+    $tip.Dock='Fill'
+    $tip.Font=[Drawing.Font]::new('Segoe UI',[single]8)
+    [void]$footer.Controls.Add($tip)
     [void]$form.Controls.Add($footer)
     $body=[Windows.Forms.FlowLayoutPanel]::new()
     $body.Dock='Fill'
     $body.FlowDirection=[Windows.Forms.FlowDirection]::TopDown
     $body.WrapContents=$false
-    $body.AutoScroll=$true
+    $body.AutoScroll=$false
+    $body.Padding=[Windows.Forms.Padding]::new(7,8,0,8)
     $body.BackColor=$script:modernDark
-    $body.Padding=[Windows.Forms.Padding]::new(10,11,0,8)
     [void]$form.Controls.Add($body)
-    # Explicit z-order controls: docked header+footer must not be covered by body.
     $header.BringToFront()
     $footer.BringToFront()
     $script:modernMenu=$form
     $script:modernBody=$body
-    # The official asset is rasterized from the committed SVG at build time.
     if($null -ne $logo){
         try{
-            $handle=$logo.GetHicon()
-            $icon=[Drawing.Icon]::FromHandle($handle)
-            $script:modernIcon=[Drawing.Icon]$icon.Clone()
+            $hicon=$logo.GetHicon()
+            $temp=[Drawing.Icon]::FromHandle($hicon)
+            $script:modernIcon=[Drawing.Icon]$temp.Clone()
             $script:tray.Icon=$script:modernIcon
         }catch{Write-GuardEvent 'BrandIconFallback' @{Reason='IconConversionFailed'}}
     }
     $script:form.ContextMenuStrip=$null
     $script:tray.ContextMenuStrip=$null
-    $script:tray.add_MouseUp({param($sender,$e)
+    $script:tray.add_MouseUp({param($s,$e)
         if($e.Button -eq [Windows.Forms.MouseButtons]::Right){Show-GuardModernMenu}
     })
-    $script:form.add_MouseUp({param($sender,$e)
+    $script:form.add_MouseUp({param($s,$e)
         if($e.Button -eq [Windows.Forms.MouseButtons]::Right){Show-GuardModernMenu}
     })
-    $script:label.add_MouseUp({param($sender,$e)
+    $script:label.add_MouseUp({param($s,$e)
         if($e.Button -eq [Windows.Forms.MouseButtons]::Right){Show-GuardModernMenu}
     })
+    Render-GuardModernPage -Page Home
 }
 function Close-GuardModernMenu {
     if($null -ne $script:modernMenu){$script:modernMenu.Hide();$script:modernMenu.Dispose();$script:modernMenu=$null}
+    $script:modernSubtitle=$null
     if($null -ne $script:modernIcon){$script:modernIcon.Dispose();$script:modernIcon=$null}
     if($null -ne $script:modernImage){$script:modernImage.Dispose();$script:modernImage=$null}
 }

@@ -8,9 +8,11 @@ $ErrorActionPreference='Stop'
 Set-StrictMode -Version 2.0
 $root=Split-Path $PSScriptRoot -Parent
 Import-Module (Join-Path $root 'src\Guard.Overlay.psm1') -Force
+Import-Module (Join-Path $root 'src\Guard.Localization.psm1') -Force
 Import-Module (Join-Path $root 'src\Guard.TemperatureSources.psm1') -Force
 $ConfigPath=Join-Path $root 'config.json' # Path used for mock UI signature only, not read in simulation.
 $DataDirectory=Join-Path $root 'artifacts\visual-preview-ui'
+$null=Initialize-GuardLocalization -DataDirectory $DataDirectory
 [IO.Directory]::CreateDirectory($DataDirectory) | Out-Null
 $stopPath=Join-Path $DataDirectory 'stop.request'
 if (Test-Path -LiteralPath $stopPath) { Remove-Item -LiteralPath $stopPath }

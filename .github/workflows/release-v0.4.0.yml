@@ -1,0 +1,42 @@
+name: Publish uTempGuard v0.4.0
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.release/v0.4.0.md'
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify safety, compact layout and bilingual UI
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($test in @('Test-Core.ps1','Test-Sensor.ps1','Test-Management.ps1','Test-ActionGuards.ps1','Test-TemperatureSources.ps1','Test-CpuSummary.ps1','Test-Overlay.ps1','Test-OverlayDisplay.ps1','Test-ModernMenu.ps1','Test-Localization.ps1','Test-UpdaterNativeStderr.ps1')) {
+            & "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path 'tests' $test)
+            if ($LASTEXITCODE -ne 0) { throw "Failed: $test" }
+          }
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish verified v0.4.0 release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view v0.4.0 >/dev/null 2>&1; then
+            echo "v0.4.0 already published."
+            exit 0
+          fi
+          gh release create v0.4.0 \
+            --target "$GITHUB_SHA" \
+            --title "uTempGuard v0.4.0 — компактное меню, RU / EN" \
+            --notes-file .release/v0.4.0.md \
+            --latest

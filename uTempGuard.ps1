@@ -13,6 +13,7 @@ Import-Module (Join-Path $PSScriptRoot 'src\Guard.Core.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'src\Guard.Sensor.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'src\Guard.CpuSummary.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'src\Guard.Overlay.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'src\Guard.Localization.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'src\Guard.Notices.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'src\Guard.TemperatureSources.psm1') -Force
 $DataDirectory = [IO.Path]::GetFullPath($DataDirectory).TrimEnd('\')
@@ -240,6 +241,7 @@ try {
     $simulation = @()
     if ($SimulationPath) { $simulation = Get-Content -LiteralPath $SimulationPath -Raw | ConvertFrom-Json; if ($simulation.Count -eq 0) { throw 'Empty simulation.' } }
     $script:overlaySettings = Get-GuardOverlaySettings -Path $script:overlaySettingsPath
+    if(-not $Headless){$null=Initialize-GuardLocalization -DataDirectory $DataDirectory}
     if (-not $Headless) {
         Initialize-GuardOverlay
         try { Initialize-GuardModernMenu }
@@ -296,7 +298,16 @@ try {
             $script:startupPendingLogged = $true
             Write-GuardEvent 'StartupAwaitingAida' @{Reason=[string]$script:lastSample.Error}
         }
-        if ($notice.Notify) { Show-GuardNotice $(if ($script:state -eq 'SensorFault') {'Нет достоверных данных CPU. Защитные действия заблокированы.'} else {"Температура выбранного датчика $($decision.Temperature) °C. Режим: $($config.Mode)."}) }
+        if ($notice.Notify) {
+            $message=if($Headless){
+                if($script:state -eq 'SensorFault'){'CPU sensor unavailable'}else{"Temperature: $($decision.Temperature) C"}
+            }elseif($script:state -eq 'SensorFault'){
+                Get-GuardText -Key 'notice.noData'
+            }else{
+                Get-GuardText -Key 'notice.thermal' -Values @($decision.Temperature,$config.Mode)
+            }
+            Show-GuardNotice $message
+        }
         Invoke-GuardIntent -Decision $decision -Candidates $candidates
         Update-GuardDisplay -Sample $script:lastSample -Decision $decision -CpuSummary $script:lastCpuSummary -TemperatureSelection $script:lastDisplayTemperature
         Write-GuardStatus -IsRunning $true -State $script:state -Sample $script:lastSample
