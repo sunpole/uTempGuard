@@ -99,7 +99,9 @@ function Render-GuardModernPage {
     $script:modernPage=$Page
     $script:modernBody.SuspendLayout()
     try{
+        $prior=@($script:modernBody.Controls)
         $script:modernBody.Controls.Clear()
+        foreach($ctl in $prior){$ctl.Dispose()}
         if($Page -ne 'Home'){
             Add-GuardModernRow -Text '‹  НАЗАД' -Action 'Page' -Value 'Home' -Accent
             Add-GuardModernSeparator
@@ -123,6 +125,7 @@ function Render-GuardModernPage {
                 Add-GuardModernSeparator
                 Add-GuardModernRow -Text '⌂  О проекте · GitHub ↗' -Action 'OpenUrl' -Value 'https://github.com/sunpole/uTempGuard'
                 Add-GuardModernRow -Text '↓  Последний релиз ↗' -Action 'OpenUrl' -Value 'https://github.com/sunpole/uTempGuard/releases/latest'
+                Add-GuardModernRow -Text '↻  Проверить обновления (только проверка)' -Action 'CheckUpdates'
                 Add-GuardModernRow -Text 'ⓘ  Сведения о программе  ›' -Action 'Page' -Value 'About'
                 Add-GuardModernSeparator
                 Add-GuardModernRow -Text '⏻  Остановить uTempGuard' -Action 'Stop' -Danger
@@ -201,7 +204,7 @@ function Render-GuardModernPage {
                 }
             }
             'About' {
-                Add-GuardModernRow -Text 'uTempGuard · современное меню'
+                Add-GuardModernRow -Text 'uTempGuard v0.3.0 · современное меню'
                 Add-GuardModernRow -Text 'Официальный логотип из SVG пользователя.'
                 Add-GuardModernRow -Text 'Раздельные источники: показ и выключение.'
                 Add-GuardModernRow -Text 'Проверенные датчики AIDA64 · PowerShell 5.1'
@@ -243,6 +246,15 @@ function Invoke-GuardModernAction {
             try{Confirm-GuardActionSource}
             finally{$script:modernModal=$false}
         }
+        'CheckUpdates' {
+            $updater=Join-Path $PSScriptRoot '..\Update-uTempGuard.ps1'
+            if(-not (Test-Path -LiteralPath $updater -PathType Leaf)){throw 'Updater не найден'}
+            $ps=Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+            $arguments='-NoExit -NoProfile -ExecutionPolicy Bypass -File "'+[IO.Path]::GetFullPath($updater)+'" -Action Preview'
+            Start-Process -FilePath $ps -ArgumentList $arguments
+            if($null -ne $script:modernMenu){$script:modernMenu.Hide()}
+            return
+        }
         'OpenUrl' {
             if($Value -notin @(
                 'https://github.com/sunpole/uTempGuard',
@@ -276,6 +288,25 @@ function Show-GuardModernMenu {
     $script:modernMenu.Show()
     $script:modernMenu.Activate()
 }
+function Set-GuardModernRoundedRegion {
+    param([Windows.Forms.Form]$Form)
+    $radius=16
+    $edge=$radius*2
+    $width=$Form.ClientSize.Width
+    $height=$Form.ClientSize.Height
+    $path=[Drawing.Drawing2D.GraphicsPath]::new()
+    try{
+        $path.AddArc(0,0,$edge,$edge,180,90)
+        $path.AddArc($width-$edge-1,0,$edge,$edge,270,90)
+        $path.AddArc($width-$edge-1,$height-$edge-1,$edge,$edge,0,90)
+        $path.AddArc(0,$height-$edge-1,$edge,$edge,90,90)
+        $path.CloseFigure()
+        $region=[Drawing.Region]::new($path)
+        $old=$Form.Region
+        $Form.Region=$region
+        if($null -ne $old){$old.Dispose()}
+    }finally{$path.Dispose()}
+}
 function Initialize-GuardModernMenu {
     # Keep the old standard context menu as a fallback if this UI initialization fails.
     $form=[Windows.Forms.Form]::new()
@@ -286,6 +317,7 @@ function Initialize-GuardModernMenu {
     $form.BackColor=$script:modernDark
     $form.ForeColor=$script:modernText
     $form.ClientSize=[Drawing.Size]::new(415,625)
+    Set-GuardModernRoundedRegion -Form $form
     $form.KeyPreview=$true
     $form.add_KeyDown({param($sender,$e) if($e.KeyCode -eq [Windows.Forms.Keys]::Escape){$sender.Hide()}})
     $form.add_Deactivate({if(-not $script:modernModal){$script:modernMenu.Hide()}})
