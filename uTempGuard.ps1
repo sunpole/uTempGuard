@@ -21,6 +21,7 @@ $DataDirectory = [IO.Path]::GetFullPath($DataDirectory).TrimEnd('\')
 [IO.Directory]::CreateDirectory($DataDirectory) | Out-Null
 $statusPath = Join-Path $DataDirectory 'status.json'
 $stopPath = Join-Path $DataDirectory 'stop.request'
+$script:dashboardRequestPath = Join-Path $DataDirectory 'dashboard.request'
 $logPath = Join-Path $DataDirectory 'events.jsonl'
 $started = [datetime]::UtcNow.ToString('o')
 $script:form = $null
@@ -222,6 +223,7 @@ function Invoke-GuardIntent {
 . (Join-Path $PSScriptRoot 'src\Guard.SourceMenu.ps1')
 . (Join-Path $PSScriptRoot 'src\Guard.ModernMenu.ps1')
 . (Join-Path $PSScriptRoot 'src\Guard.TrayIconUI.ps1')
+. (Join-Path $PSScriptRoot 'src\Guard.Dashboard.ps1')
 
 try {
     $config = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -248,6 +250,13 @@ try {
         Initialize-GuardOverlay
         try {
             Initialize-GuardModernMenu
+            # No automatic dashboard at logon. Open on an explicit user double click.
+            try {
+                Initialize-GuardDashboard
+                $script:tray.add_DoubleClick({Show-GuardDashboard})
+                $script:form.add_DoubleClick({Show-GuardDashboard})
+                $script:label.add_DoubleClick({Show-GuardDashboard})
+            }catch{ Write-GuardEvent 'DashboardInitFallback' @{Message=$_.Exception.Message} }
             # Optional UI only. Failure to load a tray graphic cannot stop the guard.
             try { Initialize-GuardTrayIcons }
             catch { Write-GuardEvent 'TrayIconFallback' @{Message=$_.Exception.Message} }
@@ -263,6 +272,14 @@ try {
             try { Update-GuardTrayIcons -ElapsedSeconds $script:clock.Elapsed.TotalSeconds }
             catch { # No UI failure can interrupt thermal safety.
             }
+        }
+        if(-not $Headless -and -not [bool]$SimulationPath -and
+           (Test-Path -LiteralPath $script:dashboardRequestPath -PathType Leaf)){
+            try{
+                # Request is display-only and accepted from the current user's local profile.
+                Remove-Item -LiteralPath $script:dashboardRequestPath -Force -ErrorAction Stop
+                Show-GuardDashboard
+            }catch{try{Write-GuardEvent 'DashboardRequestError' @{Message=$_.Exception.Message}}catch{}}
         }
         if ($script:clock.Elapsed.TotalSeconds -lt $nextTick) { Start-Sleep -Milliseconds 100; continue }
         $nextTick=$script:clock.Elapsed.TotalSeconds+$config.PollSeconds
@@ -322,7 +339,10 @@ try {
         }
         Invoke-GuardIntent -Decision $decision -Candidates $candidates
         Update-GuardDisplay -Sample $script:lastSample -Decision $decision -CpuSummary $script:lastCpuSummary -TemperatureSelection $script:lastDisplayTemperature
-        if(-not $Headless){try{Update-GuardTrayIcons -ElapsedSeconds $script:clock.Elapsed.TotalSeconds}catch{}}
+        if(-not $Headless){
+            try{Update-GuardTrayIcons -ElapsedSeconds $script:clock.Elapsed.TotalSeconds}catch{}
+            try{Update-GuardDashboard}catch{try{Write-GuardEvent 'DashboardRefreshError' @{Message=$_.Exception.Message}}catch{}}
+        }
         Write-GuardStatus -IsRunning $true -State $script:state -Sample $script:lastSample
         if ($script:count % 30 -eq 0) { Write-GuardEvent 'Sample' $script:lastSample }
         if ($MaxSamples -gt 0 -and $script:count -ge $MaxSamples) { break }
@@ -336,6 +356,7 @@ try {
 } finally {
     if ($ownsMutex) {
         if ($running) { try { Write-GuardStatus -IsRunning $false -State 'Stopped' -Sample $script:lastSample } catch {} }
+        try { Close-GuardDashboard } catch {}
         try { Close-GuardTrayIcons } catch {}
         if ($null -ne $script:modernMenu) { try{Close-GuardModernMenu}catch{} }
         if ($null -ne $script:tray) { $script:tray.Visible=$false; $script:tray.Dispose() }
