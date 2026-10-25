@@ -44,8 +44,13 @@ function Save-GuardTemperaturePolicy {
     }
     $folder=[IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($Path))
     [IO.Directory]::CreateDirectory($folder)|Out-Null
-    # Revoke approval *before* changing shutdown selection, never after.
-    if(-not [string]::IsNullOrWhiteSpace($ReceiptPath) -and (Test-Path -LiteralPath $ReceiptPath)){
+    # Changing DISPLAY mode must NOT revoke the independent shutdown approval.
+    # Changing SHUTDOWN mode must revoke approval before writing new settings.
+    $oldPolicy=Get-GuardTemperaturePolicy -Path $Path
+    $oldKey=[string]$oldPolicy.ShutdownMode+'|'+(@($oldPolicy.ShutdownIds|Sort-Object -Unique)-join ',')
+    $newKey=[string]$Policy.ShutdownMode+'|'+(@($Policy.ShutdownIds|Sort-Object -Unique)-join ',')
+    if($oldKey -cne $newKey -and -not [string]::IsNullOrWhiteSpace($ReceiptPath) -and
+       (Test-Path -LiteralPath $ReceiptPath)){
         Remove-Item -LiteralPath $ReceiptPath -Force
     }
     $record=[ordered]@{
