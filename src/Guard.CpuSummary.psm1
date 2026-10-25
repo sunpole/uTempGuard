@@ -45,48 +45,104 @@ function Get-GuardCpuTemperatureSummary {
     }
 }
 
-function Read-GuardCpuTemperatureSummary {
+function Test-GuardCpuRegistrySnapshot {
     [CmdletBinding()]
-    param([AllowNull()][object]$VerifiedSample)
-    # AIDA process, clock freshness and exact sensor source are already validated
-    # by the current primary package reader. Never substitute an unvalidated source.
+    param(
+        [AllowNull()][object]$VerifiedSample,
+        [AllowNull()][object]$Values
+    )
+    $fail = { param([string]$reason) [pscustomobject]@{Healthy=$false;Reason=$reason;Summary=$null} }
     if ($null -eq $VerifiedSample -or -not $VerifiedSample.Healthy -or
         [string]$VerifiedSample.Source -notlike 'Registry:*' -or
-        [string]$VerifiedSample.SensorId -ne 'TCPUPKG') { return $null }
-    $key=$null
-    try {
-        $key=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\FinalWire\AIDA64\SensorValues', $false)
-        if ($null -eq $key) { return $null }
-        $names = @($key.GetValueNames())
-        $clock = [string]$key.GetValue('Value.STIME', $null)
-        if ([string]::IsNullOrWhiteSpace($clock)) { return $null }
-        $parsedClock=[datetime]::MinValue
-        $clockFormats=@('H:mm:ss','HH:mm:ss','h:mm:ss tt','hh:mm:ss tt')
-        if (-not [datetime]::TryParseExact($clock,$clockFormats,[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::NoCurrentDateDefault,[ref]$parsedClock)) { return $null }
-        $verifiedHeartbeat=[datetime]::MinValue
-        if (-not [datetime]::TryParseExact([string]$VerifiedSample.Heartbeat,'yyyy-MM-ddTHH:mm:ss',[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::None,[ref]$verifiedHeartbeat)) { return $null }
-        if ($parsedClock.TimeOfDay -ne $verifiedHeartbeat.TimeOfDay) { return $null }
-        $rawDate=$key.GetValue('Value.SDATE',$null)
-        if ($null -ne $rawDate) {
-            $dateFormats=@('M/d/yyyy','MM/dd/yyyy','yyyy-MM-dd','d.M.yyyy','dd.MM.yyyy','d/M/yyyy','dd/MM/yyyy')
-            $parsedDate=[datetime]::MinValue
-            if (-not [datetime]::TryParseExact([string]$rawDate,$dateFormats,[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::None,[ref]$parsedDate) -or $parsedDate.Date -ne $verifiedHeartbeat.Date) { return $null }
+        [string]$VerifiedSample.SensorId -ne 'TCPUPKG') { return (& $fail 'PrimarySensorNotVerified') }
+    if ($null -eq $Values -or $Values -isnot [System.Collections.IDictionary]) { return (& $fail 'RegistrySnapshotMissing') }
+
+    $clock = [string]$Values['Value.STIME']
+    if ([string]::IsNullOrWhiteSpace($clock)) { return (& $fail 'HeartbeatTimeMissing') }
+    $parsedClock = [datetime]::MinValue
+    [string[]]$clockFormats=@('H:mm:ss','HH:mm:ss','h:mm:ss tt','hh:mm:ss tt')
+    if (-not [datetime]::TryParseExact($clock,$clockFormats,[Globalization.CultureInfo]::InvariantCulture,
+        [Globalization.DateTimeStyles]::NoCurrentDateDefault,[ref]$parsedClock)) { return (& $fail 'HeartbeatTimeInvalid') }
+    $verifiedHeartbeat=[datetime]::MinValue
+    if (-not [datetime]::TryParseExact([string]$VerifiedSample.Heartbeat,
+        'yyyy-MM-ddTHH:mm:ss',[Globalization.CultureInfo]::InvariantCulture,
+        [Globalization.DateTimeStyles]::None,[ref]$verifiedHeartbeat)) { return (& $fail 'VerifiedHeartbeatInvalid') }
+    if ($parsedClock.TimeOfDay -ne $verifiedHeartbeat.TimeOfDay) { return (& $fail 'HeartbeatMismatch') }
+
+    if ($Values.Contains('Value.SDATE')) {
+        [string[]]$dateFormats=@('M/d/yyyy','MM/dd/yyyy','yyyy-MM-dd','d.M.yyyy','dd.MM.yyyy','d/M/yyyy','dd/MM/yyyy')
+        $parsedDate=[datetime]::MinValue
+        if (-not [datetime]::TryParseExact([string]$Values['Value.SDATE'],$dateFormats,
+            [Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::None,
+            [ref]$parsedDate)) { return (& $fail 'HeartbeatDateInvalid') }
+        if ($parsedDate.Date -ne $verifiedHeartbeat.Date) { return (& $fail 'HeartbeatDateMismatch') }
+    }
+
+    $sensors=New-Object 'System.Collections.Generic.List[object]'
+    foreach ($name in $Values.Keys) {
+        if ([string]$name -match '^Value\.(TCPUPKG|TCC-1-(?:[1-9]|1[0-4]))$') {
+            $sensors.Add([pscustomobject]@{Id=$Matches[1];Value=$Values[$name]})
         }
-        $sensorList=New-Object 'System.Collections.Generic.List[object]'
-        foreach ($name in $names) {
-            if ($name -match '^Value\.(TCPUPKG|TCC-1-(?:[1-9]|1[0-4]))$') {
-                $sensorList.Add([pscustomobject]@{Id=$Matches[1];Value=$key.GetValue($name,$null)})
-            }
-        }
-        $summary=Get-GuardCpuTemperatureSummary -Sensors $sensorList.ToArray()
-        if ($null -eq $summary) { return $null }
-        $package=@($summary.Sensors | Where-Object { $_.Id -eq 'TCPUPKG' })
-        if ($package.Count -ne 1 -or $package[0].State -ne 'Valid' -or
-            $package[0].TemperatureC -ne [double]$VerifiedSample.TemperatureC) { return $null }
-        # Do not claim data is current when AIDA advanced during the read.
-        if ([string]$key.GetValue('Value.STIME',$null) -ne $clock) { return $null }
-        return $summary
-    } catch { return $null }
-    finally { if ($null -ne $key) { $key.Dispose() } }
+    }
+    if ($sensors.Count -lt 1) { return (& $fail 'NoCpuTemperatureEntries') }
+    $summary=Get-GuardCpuTemperatureSummary -Sensors $sensors.ToArray()
+    if ($null -eq $summary) { return (& $fail 'DuplicateSensorId') }
+    $package=@($summary.Sensors | Where-Object { $_.Id -eq 'TCPUPKG' })
+    if ($package.Count -ne 1 -or $package[0].State -ne 'Valid') { return (& $fail 'CpuPackageMissingOrInvalid') }
+    if ($package[0].TemperatureC -ne [double]$VerifiedSample.TemperatureC) { return (& $fail 'CpuPackageChangedBetweenReads') }
+    return [pscustomobject]@{Healthy=$true;Reason='Valid';Summary=$summary}
 }
-Export-ModuleMember -Function Get-GuardCpuTemperatureSummary,Read-GuardCpuTemperatureSummary
+
+function Read-GuardCpuTemperatureSummary {
+    [CmdletBinding()]
+    param(
+        [AllowNull()][object]$VerifiedSample,
+        [switch]$Diagnostic
+    )
+    $status=[pscustomobject]@{Healthy=$false;Reason='NotRead';Summary=$null}
+    if ($null -eq $VerifiedSample -or -not $VerifiedSample.Healthy -or
+        [string]$VerifiedSample.Source -notlike 'Registry:*' -or
+        [string]$VerifiedSample.SensorId -ne 'TCPUPKG') {
+        $status.Reason='PrimarySensorNotVerified'
+        if ($Diagnostic) { return $status }
+        return $null
+    }
+    # An AIDA update can occur between two independent registry reads. Retry
+    # short-lived inconsistencies, but never relax primary identity/heartbeat.
+    foreach ($attempt in 1..3) {
+        $key=$null
+        try {
+            $key=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\FinalWire\AIDA64\SensorValues',$false)
+            if ($null -eq $key) {
+                $status.Reason='RegistryKeyUnavailable'
+                break
+            }
+            $values=@{}
+            $names=@($key.GetValueNames())
+            $clockBefore=$key.GetValue('Value.STIME',$null)
+            $dateBefore=$key.GetValue('Value.SDATE',$null)
+            foreach ($name in $names) {
+                if ($name -match '^Value\.(?:TCPUPKG|TCC-1-(?:[1-9]|1[0-4])|STIME|SDATE)$') {
+                    $values[$name]=$key.GetValue($name,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+                }
+            }
+            $clockAfter=$key.GetValue('Value.STIME',$null)
+            $dateAfter=$key.GetValue('Value.SDATE',$null)
+            if ([string]$clockBefore -ne [string]$clockAfter -or [string]$dateBefore -ne [string]$dateAfter) {
+                $status.Reason='RegistryChangedDuringRead'
+            } else {
+                $status=Test-GuardCpuRegistrySnapshot -VerifiedSample $VerifiedSample -Values $values
+            }
+        } catch {
+            $status=[pscustomobject]@{Healthy=$false;Reason=('RegistryReadException:'+$_.Exception.GetType().Name);Summary=$null}
+            break
+        } finally { if ($null -ne $key) { $key.Dispose() } }
+        if ($status.Healthy) { break }
+        if ($status.Reason -notin @('RegistryChangedDuringRead','HeartbeatMismatch','CpuPackageChangedBetweenReads')) { break }
+        if ($attempt -lt 3) { Start-Sleep -Milliseconds 80 }
+    }
+    if ($Diagnostic) { return $status }
+    if ($status.Healthy) { return $status.Summary }
+    return $null
+}
+Export-ModuleMember -Function Get-GuardCpuTemperatureSummary,Read-GuardCpuTemperatureSummary,Test-GuardCpuRegistrySnapshot

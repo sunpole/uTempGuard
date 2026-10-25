@@ -93,9 +93,35 @@ $second = Read-AidaSensor -SensorId 'TCPUPKG' -AidaPath $config.AidaPath -MaxAge
 if (-not $second.Healthy -or $second.Source -notlike 'Registry:*') {
     throw ('AIDA sensor not independently validated: ' + $second.Error)
 }
-$summary = Read-GuardCpuTemperatureSummary -VerifiedSample $second
-if ($null -eq $summary -or $summary.AvailableCount -ne 15 -or $summary.MaxC -ge $config.WarningC) {
-    throw 'All 15 fresh CPU channels must be available and below warning before arming. No settings changed.'
+# Re-read a fresh verified primary whenever AIDA updates its export between
+# the primary and all-core reads. Do not bypass heartbeat or channel validation.
+$summary = $null
+$lastReason = 'NotRead'
+for ($attempt = 1; $attempt -le 4; $attempt++) {
+    if (-not $second.Healthy -or $second.Source -notlike 'Registry:*') {
+        $lastReason = 'PrimarySensorNotVerified:' + [string]$second.Error
+    } else {
+        $check = Read-GuardCpuTemperatureSummary -VerifiedSample $second -Diagnostic
+        $lastReason = [string]$check.Reason
+        if ($check.Healthy) {
+            $summary = $check.Summary
+            break
+        }
+    }
+    if ($attempt -lt 4) {
+        Start-Sleep -Milliseconds 350
+        $second = Read-AidaSensor -SensorId 'TCPUPKG' -AidaPath $config.AidaPath -MaxAgeSeconds $config.MaxAgeSeconds -Context $context
+    }
+}
+if ($null -eq $summary) {
+    throw ('Cannot verify 15 CPU temperatures: ' + $lastReason + '. No settings changed.')
+}
+if ($summary.AvailableCount -ne 15) {
+    $unavailable = @($summary.Sensors | Where-Object { $_.State -ne 'Valid' } | ForEach-Object { $_.Id + '=' + $_.State })
+    throw ('Only ' + $summary.AvailableCount + '/15 valid CPU channels. ' + ($unavailable -join ', ') + '. No settings changed.')
+}
+if ($summary.MaxC -ge $config.WarningC) {
+    throw 'CPU temperature is at or above warning threshold. No settings changed.'
 }
 Write-Output ('Verified CPU Package and 14 cores; highest reported: {0:N0} C.' -f $summary.MaxC)
 Write-Warning 'Enabling automatic forced shutdown at 75 C CAN DESTROY UNSAVED DOCUMENTS. Software cannot guarantee 100% operation.'
