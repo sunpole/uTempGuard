@@ -126,6 +126,7 @@ function Render-GuardModernPage {
                 Add-GuardModernRow -Text '⌂  О проекте · GitHub ↗' -Action 'OpenUrl' -Value 'https://github.com/sunpole/uTempGuard'
                 Add-GuardModernRow -Text '↓  Последний релиз ↗' -Action 'OpenUrl' -Value 'https://github.com/sunpole/uTempGuard/releases/latest'
                 Add-GuardModernRow -Text '↻  Проверить обновления (только проверка)' -Action 'CheckUpdates'
+                if(-not [bool]$SimulationPath){Add-GuardModernRow -Text '↓  Установить обновление (с подтверждением)' -Action 'ApplyUpdate'}
                 Add-GuardModernRow -Text 'ⓘ  Сведения о программе  ›' -Action 'Page' -Value 'About'
                 Add-GuardModernSeparator
                 Add-GuardModernRow -Text '⏻  Остановить uTempGuard' -Action 'Stop' -Danger
@@ -245,6 +246,16 @@ function Invoke-GuardModernAction {
             $script:modernModal=$true
             try{Confirm-GuardActionSource}
             finally{$script:modernModal=$false}
+        }
+        'ApplyUpdate' {
+            if([bool]$SimulationPath){return}
+            $updater=Join-Path $PSScriptRoot '..\Update-uTempGuard.ps1'
+            if(-not (Test-Path -LiteralPath $updater -PathType Leaf)){throw 'Updater не найден'}
+            $ps=Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+            $arguments='-NoExit -NoProfile -ExecutionPolicy Bypass -File "'+[IO.Path]::GetFullPath($updater)+'" -Action Apply'
+            Start-Process -FilePath $ps -ArgumentList $arguments
+            if($null -ne $script:modernMenu){$script:modernMenu.Hide()}
+            return
         }
         'CheckUpdates' {
             $updater=Join-Path $PSScriptRoot '..\Update-uTempGuard.ps1'
