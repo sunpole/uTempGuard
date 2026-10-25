@@ -4,6 +4,9 @@ on:
     branches: [main]
     paths:
       - '.release/v0.5.0.md'
+      - 'tools/Build-Distribution.ps1'
+      - 'tests/Test-Distribution.ps1'
+      - '.github/workflows/release-v0.5.0.yml'
 permissions:
   contents: write
 jobs:
