@@ -8,8 +8,18 @@ $script:git=$gitCommand.Source
 $script:root=$root
 function Invoke-LocalGit {
     param([Parameter(Mandatory)][string[]]$Arguments)
-    $lines=@(& $script:git -C $script:root @Arguments 2>&1)
-    if ($LASTEXITCODE -ne 0) { throw ('Git failed: ' + ($Arguments -join ' ') + [Environment]::NewLine + ($lines -join [Environment]::NewLine)) }
+    # Windows PowerShell 5.1 treats Git's harmless stderr progress ("From ...")
+    # as a NativeCommandError when the caller uses ErrorActionPreference=Stop.
+    # The process exit code, not stderr, determines command success.
+    $previousPreference=$ErrorActionPreference
+    try {
+        $ErrorActionPreference='Continue'
+        $lines=@(& $script:git -C $script:root @Arguments 2>&1 | ForEach-Object { [string]$_ })
+        $exitCode=$LASTEXITCODE
+    } finally {
+        $ErrorActionPreference=$previousPreference
+    }
+    if ($exitCode -ne 0) { throw ('Git failed (exit ' + $exitCode + '): ' + ($Arguments -join ' ') + [Environment]::NewLine + ($lines -join [Environment]::NewLine)) }
     return $lines
 }
 $checkout=[string](Invoke-LocalGit -Arguments @('rev-parse','--show-toplevel') | Select-Object -First 1)
@@ -29,8 +39,16 @@ if ($old -ceq $new) {
     Write-Output ('Already up to date: '+$old.Substring(0,12))
     return
 }
-$null=@(& $script:git -C $root merge-base --is-ancestor HEAD origin/main 2>&1)
-if ($LASTEXITCODE -ne 0) { throw 'Local main has diverged; no update applied. Manual review required.' }
+# Here exit 1 is an expected "not an ancestor" outcome, not a PS error.
+$oldPreference=$ErrorActionPreference
+try {
+    $ErrorActionPreference='Continue'
+    $null=@(& $script:git -C $root merge-base --is-ancestor HEAD origin/main 2>&1)
+    $ancestorExitCode=$LASTEXITCODE
+} finally {
+    $ErrorActionPreference=$oldPreference
+}
+if ($ancestorExitCode -ne 0) { throw 'Local main has diverged or Git could not verify ancestry; no update applied. Manual review required.' }
 Write-Output ('Local:  '+$old.Substring(0,12))
 Write-Output ('Remote: '+$new.Substring(0,12))
 Invoke-LocalGit -Arguments @('diff','--stat','HEAD','origin/main') | ForEach-Object { Write-Output $_ }
