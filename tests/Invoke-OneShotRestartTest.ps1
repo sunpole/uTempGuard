@@ -65,6 +65,13 @@ if($answer -cne 'RESTART ONCE') {
     Write-Output 'Cancelled: no changes.'
     return
 }
+# Recheck actual sensors after confirmation. Reject if CPU is now warming up.
+$verified=Read-AidaSensor -SensorId 'TCPUPKG' -AidaPath $config.AidaPath -MaxAgeSeconds $config.MaxAgeSeconds -Context $context
+$verifiedSummary=if($verified.Healthy){Read-GuardCpuTemperatureSummary -VerifiedSample $verified}else{$null}
+if($null -eq $verifiedSummary -or $verifiedSummary.AvailableCount -ne 15 -or
+   $verifiedSummary.MaxC -ge $config.WarningC){
+    throw 'Temperature or sensor health changed after confirmation. No restart requested.'
+}
 # Persistent one-time latch prevents repeated reboot after startup or accidental reruns.
 [IO.Directory]::CreateDirectory($testDirectory) | Out-Null
 $record=[ordered]@{TestId=$TestId;Utc=[datetime]::UtcNow.ToString('o');SimulatedC=75;Command='Restart-Computer (without -Force)';Requested=$true}
