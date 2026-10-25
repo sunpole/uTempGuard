@@ -1,0 +1,17 @@
+{
+  "Version": "0.5.0",
+  "Mode": "Observe",
+  "SensorId": "TCPUPKG",
+  "AidaPath": "",
+  "PollSeconds": 2,
+  "MaxAgeSeconds": 10,
+  "WarningC": 70,
+  "ResumeBelowC": 69,
+  "ShutdownC": 75,
+  "CpuThresholdPercent": 30,
+  "EnableAppClose": false,
+  "EnableShutdown": false,
+  "EnableForcedShutdown": false,
+  "AppCloseScope": "ApprovedInteractive",
+  "AllowList": []
+}
