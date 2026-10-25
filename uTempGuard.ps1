@@ -238,10 +238,13 @@ try {
         } else {
             $script:lastSample=Read-AidaSensor -SensorId $config.SensorId -AidaPath $config.AidaPath -MaxAgeSeconds $config.MaxAgeSeconds -Context $script:context
             $script:lastCpuSummary=Read-GuardCpuTemperatureSummary -VerifiedSample $script:lastSample
-            $candidates=@(Get-GuardCandidates)
+            $candidates=@()
         }
         $decisionTemperature=Get-VerifiedCpuMaximum -Primary $script:lastSample -CpuSummary $script:lastCpuSummary
         $decision=Get-GuardDecision -Temperature $decisionTemperature -SensorHealthy $script:lastSample.Healthy -PreviousState $script:state -WarningC $config.WarningC -ResumeBelowC $config.ResumeBelowC -ShutdownC $config.ShutdownC
+        if (-not $SimulationPath -and $decision.Intent -eq 'ReduceLoad' -and $config.EnableAppClose -and @($config.AllowList).Count -gt 0 -and (Test-LiveApproval)) {
+            $candidates=@(Get-GuardCandidates)
+        }
         $script:state=$decision.State; $script:lastDecision=$decision; $script:count++
         if ($previousState -ne $script:state -or $script:count -eq 1) { Write-GuardEvent 'StateChanged' @{From=$previousState;To=$script:state;TemperatureC=$script:lastSample.TemperatureC;Error=$script:lastSample.Error} }
         if ($script:state -ne 'Normal') { Show-GuardNotice $(if ($script:state -eq 'SensorFault') {'Нет достоверных данных CPU. Защитные действия заблокированы.'} else {"Температура CPU $($script:lastSample.TemperatureC) °C. Режим: $($config.Mode)."}) }
