@@ -105,6 +105,9 @@
     "fallback.showMode": "Display sensors",
     "fallback.sourceConfirm": "Approve sensors…",
     "fallback.sensorWaiting": "Waiting for AIDA64",
-    "home.about": "About ›"
+    "home.about": "About ›",
+    "gallery.open": "Icons · 28 SVG gallery ↗",
+    "gallery.edit": "Preview 32px, themes and blinking",
+    "about.logoLink": "Official SVG ↗"
   }
 }
