@@ -36,3 +36,7 @@ Thumbs.db
 # Safety approval and visual preferences (always local)
 /live-approval.json
 /overlay.json
+
+# User-owned editable CorelDRAW originals; preserve locally but do not publish automatically
+/assets/logo/*.cdr
+/assets/logo/*.CDR
