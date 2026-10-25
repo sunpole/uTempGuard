@@ -200,7 +200,9 @@ function Render-GuardModernPage {
         }
         switch($Page){
             'Home' {
-                Add-GuardModernRow -Text (Get-GuardUiText 'home.dashboard') -Action 'OpenDashboard' -Accent
+                if($null -ne (Get-Command -Name Show-GuardDashboard -ErrorAction SilentlyContinue)){
+                    Add-GuardModernRow -Text (Get-GuardUiText 'home.dashboard') -Action 'OpenDashboard' -Accent
+                }
                 Add-GuardModernRow -Text (Get-GuardModernSummaryText) -Action 'Page' -Value 'Sensors' -Accent
                 $count=if($null -ne $script:lastCpuSummary){
                     Get-GuardUiText 'home.sensors' @($script:lastCpuSummary.AvailableCount,$script:lastCpuSummary.ExpectedCount)
