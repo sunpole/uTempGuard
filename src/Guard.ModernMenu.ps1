@@ -252,6 +252,7 @@ function Render-GuardModernPage {
                 Add-GuardModernRow -Text ($label+' · '+$shown) -Action 'ToggleVisible'
                 Add-GuardModernRow -Text (Get-GuardUiText 'appearance.opacity') -Action 'Page' -Value 'Opacity'
                 Add-GuardModernRow -Text (Get-GuardUiText 'appearance.position') -Action 'Page' -Value 'Positions'
+                Add-GuardModernRow -Text (Get-GuardUiText 'gallery.open') -Action 'OpenGallery'
                 Add-GuardModernSeparator
                 Add-GuardModernRow -Text (Get-GuardUiText 'appearance.fontUp') -Action 'Font' -Value 'Increase'
                 Add-GuardModernRow -Text (Get-GuardUiText 'appearance.fontDown') -Action 'Font' -Value 'Decrease'
@@ -287,9 +288,11 @@ function Render-GuardModernPage {
             }
             'About' {
                 Add-GuardModernRow -Text (Get-GuardUiText 'page.about')
-                foreach($key in @('about.version','about.details','about.brand','about.sources')){
+                foreach($key in @('about.version','about.details','about.sources')){
                     Add-GuardModernRow -Text (Get-GuardUiText $key)
                 }
+                Add-GuardModernRow -Text (Get-GuardUiText 'about.logoLink') -Action 'OpenUrl' -Value 'https://github.com/sunpole/uTempGuard/blob/main/assets/u_logo_tempg2.svg'
+                Add-GuardModernRow -Text (Get-GuardUiText 'gallery.open') -Action 'OpenGallery'
                 Add-GuardModernRow -Text (Get-GuardUiText 'about.github') -Action 'OpenUrl' -Value 'https://github.com/sunpole/uTempGuard'
                 Add-GuardModernRow -Text (Get-GuardUiText 'about.release') -Action 'OpenUrl' -Value 'https://github.com/sunpole/uTempGuard/releases/latest'
                 Add-GuardModernRow -Text (Get-GuardUiText 'about.docs') -Action 'OpenUrl' -Value 'https://github.com/sunpole/uTempGuard#readme'
@@ -396,12 +399,20 @@ function Invoke-GuardModernAction {
             try{Confirm-GuardActionSource}
             finally{$script:modernModal=$false}
         }
+        'OpenGallery' {
+            $file=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\docs\icon-gallery.html'))
+            if(-not (Test-Path -LiteralPath $file -PathType Leaf)){throw 'Icon gallery is not installed'}
+            Start-Process -FilePath $file
+            if($null -ne $script:modernMenu){$script:modernMenu.Hide()}
+            return
+        }
         'CheckUpdates' {Start-GuardUpdater -Mode Preview;return}
         'ApplyUpdate' {if(-not [bool]$SimulationPath){Start-GuardUpdater -Mode Apply};return}
         'OpenUrl' {
             if($Value -notin @('https://github.com/sunpole/uTempGuard',
                 'https://github.com/sunpole/uTempGuard/releases/latest',
-                'https://github.com/sunpole/uTempGuard#readme')){return}
+                'https://github.com/sunpole/uTempGuard#readme',
+                'https://github.com/sunpole/uTempGuard/blob/main/assets/u_logo_tempg2.svg')){return}
             Start-Process -FilePath $Value
             $script:modernMenu.Hide();return
         }
