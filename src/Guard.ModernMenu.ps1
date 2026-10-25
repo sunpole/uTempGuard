@@ -3,6 +3,7 @@ Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Windows.Forms
 $script:modernMenu=$null
 $script:modernBody=$null
+$script:modernSubtitle=$null
 $script:modernIcon=$null
 $script:modernImage=$null
 $script:modernModal=$false
@@ -340,6 +341,7 @@ function Invoke-GuardModernAction {
         }
         'SetLanguage' {
             $null=Set-GuardLanguage -Locale $Value
+            if($null -ne $script:modernSubtitle){$script:modernSubtitle.Text=Get-GuardUiText 'app.tagline'}
             Render-GuardModernPage -Page $script:modernPage;return
         }
         'ToggleBackground' {Set-GuardOverlayPreference -Name ShowBackground -Value (-not $script:overlaySettings.ShowBackground)}
@@ -440,6 +442,7 @@ function Initialize-GuardModernMenu {
     $subtitle.Font=[Drawing.Font]::new('Segoe UI',[single]8)
     $subtitle.Bounds=[Drawing.Rectangle]::new(64,29,296,18)
     [void]$header.Controls.Add($subtitle)
+    $script:modernSubtitle=$subtitle
     $footer=[Windows.Forms.Panel]::new()
     $footer.Dock='Bottom'
     $footer.Height=$script:modernFooterHeight
@@ -487,6 +490,7 @@ function Initialize-GuardModernMenu {
 }
 function Close-GuardModernMenu {
     if($null -ne $script:modernMenu){$script:modernMenu.Hide();$script:modernMenu.Dispose();$script:modernMenu=$null}
+    $script:modernSubtitle=$null
     if($null -ne $script:modernIcon){$script:modernIcon.Dispose();$script:modernIcon=$null}
     if($null -ne $script:modernImage){$script:modernImage.Dispose();$script:modernImage=$null}
 }
