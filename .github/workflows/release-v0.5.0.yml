@@ -1,0 +1,70 @@
+name: Publish uTempGuard v0.5.0 Windows ZIP
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.release/v0.5.0.md'
+permissions:
+  contents: write
+jobs:
+  verify-and-build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify runtime, setup and packaging safely (PowerShell 5.1)
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($test in @('Test-Core.ps1','Test-Sensor.ps1',
+            'Test-ActionGuards.ps1','Test-TemperatureSources.ps1',
+            'Test-ModernMenu.ps1','Test-Localization.ps1',
+            'Test-IconGallery.ps1','Test-UpdaterNativeStderr.ps1',
+            'Test-UpdaterUntracked.ps1','Test-Distribution.ps1')){
+            & "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path 'tests' $test)
+            if($LASTEXITCODE -ne 0){throw "Failed: $test"}
+          }
+      - name: Build clean Windows release artifacts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $path=Join-Path $env:RUNNER_TEMP 'utg-release'
+          & "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File tools/Build-Distribution.ps1 -Version 0.5.0 -OutputDirectory $path
+          if($LASTEXITCODE -ne 0){throw 'Distribution builder failed'}
+          if(-not (Test-Path (Join-Path $path 'uTempGuard-v0.5.0-win.zip'))){throw 'ZIP missing'}
+          if(-not (Test-Path (Join-Path $path 'uTempGuard-v0.5.0-win.zip.sha256'))){throw 'SHA256 missing'}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: uTempGuard-v0.5.0-Windows
+          path: ${{ runner.temp }}/utg-release/*
+          if-no-files-found: error
+          retention-days: 30
+  publish:
+    needs: verify-and-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: uTempGuard-v0.5.0-Windows
+          path: dist
+      - name: Verify checksum and publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum -c uTempGuard-v0.5.0-win.zip.sha256
+          cd ..
+          if gh release view v0.5.0 >/dev/null 2>&1; then
+            echo "Release v0.5.0 already published; no destructive overwrite."
+            exit 0
+          fi
+          gh release create v0.5.0 \
+            --target "$GITHUB_SHA" \
+            --title "uTempGuard v0.5.0 — Windows ZIP / RU + EN" \
+            --notes-file .release/v0.5.0.md \
+            --latest \
+            dist/uTempGuard-v0.5.0-win.zip \
+            dist/uTempGuard-v0.5.0-win.zip.sha256
