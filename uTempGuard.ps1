@@ -66,7 +66,7 @@ function Write-GuardStatus {
     param([bool]$IsRunning, [string]$State, [object]$Sample)
     $temperature = $null; $sensorError = $null
     if ($null -ne $Sample) { $temperature = $Sample.TemperatureC; $sensorError = $Sample.Error }
-    $value = [ordered]@{Pid=$PID;StartedUtc=$started;UpdatedUtc=[datetime]::UtcNow.ToString('o');Running=$IsRunning;State=$State;TemperatureC=$temperature;SensorError=$sensorError;Mode=$config.Mode;Simulation=[bool]$SimulationPath;SensorId=$config.SensorId;SampleCount=$script:count;LogicalProcessors=$logicalCount;DisplaySourceMode=$script:temperaturePolicy.DisplayMode;ShutdownSourceMode=$script:temperaturePolicy.ShutdownMode;DisplayMaxC=$(if($null -ne $script:lastDisplayTemperature){$script:lastDisplayTemperature.MaxC}else{$null});ShutdownMaxC=$(if($null -ne $script:lastShutdownTemperature){$script:lastShutdownTemperature.MaxC}else{$null})}
+    $value = [ordered]@{Pid=$PID;StartedUtc=$started;UpdatedUtc=[datetime]::UtcNow.ToString('o');Running=$IsRunning;State=$State;TemperatureC=$temperature;SensorError=$sensorError;Mode=$config.Mode;Simulation=[bool]$SimulationPath;SensorId=$config.SensorId;SampleCount=$script:count;LogicalProcessors=$logicalCount;DisplaySourceMode=$script:temperaturePolicy.DisplayMode;ShutdownSourceMode=$script:temperaturePolicy.ShutdownMode;DisplayMaxC=$(if($null -ne $script:lastDisplayTemperature){$script:lastDisplayTemperature.MaxC}else{$null});ShutdownMaxC=$(if($null -ne $script:lastShutdownTemperature){$script:lastShutdownTemperature.MaxC}else{$null});EffectiveDecisionC=$(if($null -ne $script:lastDecision){$script:lastDecision.Temperature}else{$null})}
     $tmp = "$statusPath.$PID.tmp"
     [IO.File]::WriteAllText($tmp, ($value | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
     Move-Item -LiteralPath $tmp -Destination $statusPath -Force
@@ -291,7 +291,7 @@ try {
             $script:startupPendingLogged = $true
             Write-GuardEvent 'StartupAwaitingAida' @{Reason=[string]$script:lastSample.Error}
         }
-        if ($notice.Notify) { Show-GuardNotice $(if ($script:state -eq 'SensorFault') {'Нет достоверных данных CPU. Защитные действия заблокированы.'} else {"Температура CPU $($script:lastSample.TemperatureC) °C. Режим: $($config.Mode)."}) }
+        if ($notice.Notify) { Show-GuardNotice $(if ($script:state -eq 'SensorFault') {'Нет достоверных данных CPU. Защитные действия заблокированы.'} else {"Температура выбранного датчика $($decision.Temperature) °C. Режим: $($config.Mode)."}) }
         Invoke-GuardIntent -Decision $decision -Candidates $candidates
         Update-GuardDisplay -Sample $script:lastSample -Decision $decision -CpuSummary $script:lastCpuSummary -TemperatureSelection $script:lastDisplayTemperature
         Write-GuardStatus -IsRunning $true -State $script:state -Sample $script:lastSample
