@@ -1,2 +1,2 @@
 @echo off
-start "" "%WINDIR%\System32\wscript.exe" "%~dp0Launch.vbs"
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "%~dp0Open-uTempGuard.ps1"
