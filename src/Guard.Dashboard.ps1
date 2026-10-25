@@ -231,7 +231,6 @@ function Update-GuardDashboard {
     $script:dashboardLabels.Safety.ForeColor=if($permitted){$script:dashboardGreen}else{$script:dashboardAmber}
     $script:dashboardLabels.Subtitle.Text=Get-GuardText -Key 'dashboard.subtitle'
     $script:dashboardLabels.Footer.Text=Get-GuardText -Key 'dashboard.footer'
-    foreach($row in @($script:dashboardForm.Controls.Find('', $true))){$null=$row}
 }
 function Show-GuardDashboard {
     if($null -eq $script:dashboardForm -or $script:dashboardForm.IsDisposed){Initialize-GuardDashboard}
