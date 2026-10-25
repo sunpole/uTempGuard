@@ -12,7 +12,17 @@ function Test-GuardLocaleCode {
     return $Locale -cmatch '^[a-z]{2}(?:-[A-Z]{2})?$'
 }
 function Get-GuardSupportedLanguages {
-    @('ru-RU','en-US')
+    # Adding a validated <locale>.json catalog automatically exposes a new language.
+    $available=@([string]$script:defaultLocale)
+    if(Test-Path -LiteralPath $script:translationRoot -PathType Container){
+        foreach($file in @(Get-ChildItem -LiteralPath $script:translationRoot -Filter '*.json' -File)){
+            $locale=[IO.Path]::GetFileNameWithoutExtension($file.Name)
+            if((Test-GuardLocaleCode $locale) -and $locale -cnotin $available){
+                $available+= $locale
+            }
+        }
+    }
+    return $available
 }
 function Read-GuardLocaleCatalog {
     [CmdletBinding()]
