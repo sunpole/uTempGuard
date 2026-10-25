@@ -47,11 +47,11 @@ function Set-GuardOverlayPreference {
     catch { Write-GuardEvent 'OverlaySettingsError' @{Message=$_.Exception.Message} }
     Set-GuardOverlayLayout
     if ($null -ne $script:lastSample -and $null -ne $script:lastDecision) {
-        Update-GuardDisplay -Sample $script:lastSample -Decision $script:lastDecision
+        Update-GuardDisplay -Sample $script:lastSample -Decision $script:lastDecision -CpuSummary $script:lastCpuSummary
     }
 }
 function Update-GuardDisplay {
-    param([object]$Sample, [object]$Decision)
+    param([object]$Sample, [object]$Decision, [AllowNull()][object]$CpuSummary = $null)
     if ($null -eq $script:form) { return }
     $suffix = if ($SimulationPath) {'ИМИТАЦИЯ'} elseif ($config.Mode -eq 'Observe') {'НАБЛЮДЕНИЕ'} elseif (Test-LiveApproval) {'БОЕВОЙ РЕЖИМ'} else {'ДЕЙСТВИЯ ЗАБЛОКИРОВАНЫ'}
     $foreground = [Drawing.Color]::FromArgb(158,248,180)
@@ -62,8 +62,19 @@ function Update-GuardDisplay {
         $foreground = [Drawing.Color]::White
         $background = [Drawing.Color]::FromArgb(120,60,0)
     } else {
-        $shortText = ('CPU {0:N0}°C' -f $Sample.TemperatureC)
-        $fullText = ('CPU Package: {0:N0} °C' -f $Sample.TemperatureC) + [Environment]::NewLine + "$suffix | $($Decision.State)"
+        $readout = [double]$Sample.TemperatureC
+        $sourceName = 'CPU Package'
+        if ($null -ne $CpuSummary -and $null -ne $CpuSummary.MaxC -and $CpuSummary.AvailableCount -ge 1) {
+            $readout = [double]$CpuSummary.MaxC
+            $sourceName = if ($CpuSummary.HottestId -eq 'TCPUPKG') { 'CPU Package' } else { 'CPU ' + $CpuSummary.HottestId }
+        }
+        $shortText = ('CPU MAX {0:N0}°C' -f $readout)
+        $fullText = ('{0}: {1:N0} °C' -f $sourceName,$readout) + [Environment]::NewLine + "$suffix | $($Decision.State)"
+        if ($readout -ge $config.WarningC -and $Decision.State -eq 'Normal') {
+            $foreground = [Drawing.Color]::White
+            $background = [Drawing.Color]::DarkOrange
+            if ($readout -ge $config.ShutdownC) { $background = [Drawing.Color]::DarkRed }
+        }
         if ($Decision.State -eq 'Critical') {
             $foreground = [Drawing.Color]::White
             $background = [Drawing.Color]::DarkRed
@@ -82,6 +93,23 @@ function Update-GuardDisplay {
         # Transparent only for the background, not the CPU text.
         $script:form.BackColor = [Drawing.Color]::Magenta
         $script:form.TransparencyKey = [Drawing.Color]::Magenta
+    }
+    if ($null -ne $script:menuCpuSensors) {
+        $script:menuCpuSensors.DropDownItems.Clear()
+        if ($null -eq $CpuSummary) {
+            $item=$script:menuCpuSensors.DropDownItems.Add('Нет подтверждённых данных ядер')
+            $item.Enabled=$false
+        } else {
+            $script:menuCpuSensors.Text=('Датчики CPU: {0}/{1}' -f $CpuSummary.AvailableCount,$CpuSummary.ExpectedCount)
+            foreach ($sensor in $CpuSummary.Sensors) {
+                $text = if ($sensor.State -eq 'Valid') { ('{0}: {1:N0}°C' -f $sensor.Label,$sensor.TemperatureC) }
+                    elseif ($sensor.State -eq 'Invalid') { "$($sensor.Label): недостоверно" }
+                    else { "$($sensor.Label): не экспортируется" }
+                if ($sensor.Id -eq $CpuSummary.HottestId) { $text = '★ ' + $text }
+                $item=$script:menuCpuSensors.DropDownItems.Add($text)
+                $item.Enabled=$false
+            }
+        }
     }
     $tooltip = $shortText + ' | ' + $suffix + ' | ' + $Decision.State
     $script:tray.Text = $tooltip.Substring(0,[math]::Min(63,$tooltip.Length))
@@ -107,6 +135,8 @@ function Initialize-GuardOverlay {
     $script:menuCompact.add_Click({ Set-GuardOverlayPreference -Name 'Style' -Value 'Compact' })
     $script:menuFull=$menu.Items.Add('Полный индикатор')
     $script:menuFull.add_Click({ Set-GuardOverlayPreference -Name 'Style' -Value 'Full' })
+    $script:menuCpuSensors=[Windows.Forms.ToolStripMenuItem]::new('Датчики CPU')
+    $menu.Items.Add($script:menuCpuSensors) | Out-Null
     $menu.Items.Add('-') | Out-Null
     $fontIncrease=$menu.Items.Add('Шрифт крупнее')
     $fontIncrease.add_Click({ Set-GuardOverlayPreference -Name 'FontSize' -Value ([int]$script:overlaySettings.FontSize + 1) })
