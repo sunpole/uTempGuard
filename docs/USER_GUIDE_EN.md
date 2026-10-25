@@ -4,11 +4,11 @@
 
 ## Everyday operation
 
-- `00_START-HERE.cmd` opens the first-run setup or the management menu.
-- `Start-uTempGuard.cmd` starts an already configured monitor.
+- `00_START-HERE.cmd` opens the first-run setup or the full graphical desktop dashboard. `Open-uTempGuard.cmd` does the same after installation.
+- `Start-uTempGuard.cmd` starts an already configured monitor and opens its dashboard. Closing the main window does not stop background monitoring.
 - `Управление.cmd` opens a console menu for start/stop/status/diagnostics/autostart.
-- Right-click the **system-tray icon** to open the dark menu. A fixed back arrow in the header or Esc navigates to the parent page.
-- `Open-Icon-Gallery.cmd` previews all 28 SVG images without heating hardware.
+- Double-click the **system-tray icon** to open the full dashboard; right-click it to open the compact dark menu. A fixed back arrow in the header or Esc navigates to the parent page.
+- `Open-Icon-Gallery.cmd` previews all 28 SVG images without heating hardware. [All 28 icons also render directly on GitHub](ICON_CATALOG_EN.md).
 
 ## Temperature sources
 

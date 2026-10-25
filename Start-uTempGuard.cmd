@@ -1,2 +1,2 @@
 @echo off
-start "" "%WINDIR%\System32\wscript.exe" "%~dp0Launch.vbs"
+start "" "%SystemRoot%\System32\wscript.exe" "%~dp0Open-uTempGuard.vbs"

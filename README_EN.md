@@ -13,7 +13,7 @@
 
 [**Русский (primary)**](README.md) · **English**
 
-[**⬇ Download ZIP**](https://github.com/sunpole/uTempGuard/releases/latest) · [**Installation**](docs/INSTALL_EN.md) · [**User guide**](docs/USER_GUIDE_EN.md) · [**Icon gallery**](docs/icon-gallery.html)
+[**⬇ Download ZIP**](https://github.com/sunpole/uTempGuard/releases/latest) · [**Installation**](docs/INSTALL_EN.md) · [**User guide**](docs/USER_GUIDE_EN.md) · [**All 28 SVG icons**](docs/ICON_CATALOG_EN.md)
 
 </div>
 
@@ -26,6 +26,9 @@ uTempGuard is a compact **Windows PowerShell 5.1 / WinForms** utility that reads
 Python, Node.js and WebView2 are **not required** to run the application. AIDA64 is **not bundled**: you need your own installed, appropriately licensed copy with sensor export enabled.
 
 ## Features
+
+**Two Windows views:** double-click the tray icon or `00_START-HERE.cmd` to open the main desktop dashboard with live verified readings and working settings shortcuts; right-click for the compact menu. Closing the dashboard **does not stop** the monitoring process. The promotional images below are **design concepts**, not pixel-perfect screenshots of the shipping WinForms dashboard.
+
 
 | Capability | Details |
 |---|---|
@@ -41,16 +44,16 @@ Python, Node.js and WebView2 are **not required** to run the application. AIDA64
 <div align="center">
 <img src="docs/screenshots/Screenshot_7.jpg" alt="Historical uTempGuard interface screenshot" width="47%">
 <img src="docs/screenshots/Screenshot_8.jpg" alt="Second historical development screenshot" width="47%">
-<p><sub>Historical development screenshots. The current application UI may differ.</sub></p>
+<p><sub>Historical design concepts, not screenshots of the current Windows application.</sub></p>
 </div>
 
-The [offline icon gallery](docs/icon-gallery.html) lets you inspect all source SVGs, both taskbar themes, simulated temperatures and 400 ms alert animation without heating your hardware.
+The [GitHub-rendered catalog of all 28 original SVGs](docs/ICON_CATALOG_EN.md) shows every image and clickable source filename. The [offline HTML icon gallery](docs/icon-gallery.html) lets you inspect all source SVGs, both taskbar themes, simulated temperatures and 400 ms alert animation without heating your hardware.
 
 ## Install in five steps
 
 1. Visit [the latest GitHub Release](https://github.com/sunpole/uTempGuard/releases/latest) and download the attached **uTempGuard-vX.Y.Z-win.zip**, not GitHub's automatically generated source archive.
 2. Extract it into a **permanent location**, such as `C:\Tools\uTempGuard`.
-3. Double-click `00_START-HERE.cmd` or `Install-uTempGuard.cmd`.
+3. Double-click `00_START-HERE.cmd` or `Install-uTempGuard.cmd`. After installation, double-clicking `00_START-HERE.cmd` or `Open-uTempGuard.cmd` opens the desktop dashboard.
 4. Provide the path to a valid signed FinalWire `aida64.exe`; configure AIDA64's sensor export as explained in the [installation guide](docs/INSTALL_EN.md).
 5. Check the tray status after installation. The default is **Observe**: emergency power actions are never silently enabled.
 

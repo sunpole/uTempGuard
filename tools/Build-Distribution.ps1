@@ -1,7 +1,7 @@
 ﻿# Windows release builder, source tree READ ONLY.
 [CmdletBinding()]
 param(
-    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version='0.5.0',
+    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version='0.5.1',
     [string]$ProjectRoot='',
     [string]$OutputDirectory=''
 )
@@ -27,6 +27,7 @@ try{
     [IO.Directory]::CreateDirectory($bundle)|Out-Null
     $entrypoints=@(
         '00_START-HERE.cmd','Install-uTempGuard.cmd','Start-uTempGuard.cmd',
+        'Open-uTempGuard.cmd','Open-uTempGuard.ps1','Open-uTempGuard.vbs',
         'Open-Icon-Gallery.cmd','START-uTempGuard-Collector.cmd','Управление.cmd',
         'Setup-uTempGuard.ps1','Install.ps1','Manage.ps1','Launch.vbs',
         'Control.ps1','uTempGuard.ps1','Emergency-Control.ps1',
@@ -61,7 +62,7 @@ try{
        'docs\INSTALL_RU.md','docs\INSTALL_EN.md',
        'docs\USER_GUIDE_RU.md','docs\USER_GUIDE_EN.md',
        'docs\LOCALIZATION.md','docs\TRAY_ICONS.md','docs\PROJECT_STRUCTURE.md',
-       'docs\icon-gallery.html')){
+       'docs\icon-gallery.html','docs\ICON_CATALOG.md','docs\ICON_CATALOG_EN.md')){
         Copy-PublicFile $file
     }
     if((Get-Content -LiteralPath (Join-Path $bundle 'config.example.json') -Raw -Encoding UTF8|ConvertFrom-Json).Mode -ne 'Observe'){
