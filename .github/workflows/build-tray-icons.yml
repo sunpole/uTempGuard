@@ -5,6 +5,8 @@ on:
     paths:
       - 'assets/logo/*.svg'
       - 'tools/build-tray-icons.py'
+      - 'tools/test-build-tray-icons.py'
+      - '.github/workflows/build-tray-icons.yml'
   workflow_dispatch:
 permissions:
   contents: write
