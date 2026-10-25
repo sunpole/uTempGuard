@@ -8,7 +8,7 @@ $script:label=[pscustomobject]@{Text='';ForeColor=$null}
 $script:tray=[pscustomobject]@{Text=''}
 $script:overlaySettings=[pscustomobject]@{Style='Compact';ShowBackground=$true}
 $SimulationPath='safe'
-$config=[pscustomobject]@{Mode='Observe'}
+$config=[pscustomobject]@{Mode='Observe';WarningC=70;ShutdownC=75}
 function Test-LiveApproval { return $false }
 . (Join-Path $root 'src\Guard.OverlayUI.ps1')
 $good=[pscustomobject]@{Healthy=$true;TemperatureC=41}
