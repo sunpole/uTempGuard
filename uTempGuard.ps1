@@ -90,9 +90,10 @@ function Get-GuardCandidates {
             if (-not $script:previousProcesses.ContainsKey($key)) { continue }
             $prev = $script:previousProcesses[$key]
             $percent = Get-NormalizedCpuPercent -CpuSecondsDelta ($cpu-$prev.Cpu) -ElapsedSeconds ($nowSeconds-$prev.Time) -LogicalProcessors $logicalCount
+            if ($null -eq $percent) { continue }
             if ($scanApproved) {
                 if ($proc.ProcessName -notin $approvedNames) { continue }
-            } elseif ($null -eq $percent -or $percent -le $config.CpuThresholdPercent) { continue }
+            } elseif ($percent -le $config.CpuThresholdPercent) { continue }
             $owner = $null; $isService = $true
             $cim = Get-CimInstance Win32_Process -Filter "ProcessId=$($proc.Id)" -ErrorAction Stop
             $ownerResult = Invoke-CimMethod -InputObject $cim -MethodName GetOwnerSid -ErrorAction Stop
