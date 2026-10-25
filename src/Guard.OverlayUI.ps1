@@ -56,7 +56,7 @@ function Update-GuardDisplay {
     $suffix = if ($SimulationPath) {'ИМИТАЦИЯ'} elseif ($config.Mode -eq 'Observe') {'НАБЛЮДЕНИЕ'} elseif (Test-LiveApproval) {'БОЕВОЙ РЕЖИМ'} else {'ДЕЙСТВИЯ ЗАБЛОКИРОВАНЫ'}
     $foreground = [Drawing.Color]::FromArgb(158,248,180)
     $background = [Drawing.Color]::FromArgb(20,30,24)
-    if (-not $Sample.Healthy) {
+    if (-not $Sample.Healthy -or $Decision.State -eq 'SensorFault') {
         $shortText = 'CPU --°C'
         $fullText = 'CPU: нет достоверных данных' + [Environment]::NewLine + "$suffix | ДАТЧИК НЕДОСТУПЕН"
         $foreground = [Drawing.Color]::White
