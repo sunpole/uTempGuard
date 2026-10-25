@@ -81,6 +81,7 @@ function New-GuardModernRow {
     $btn.Margin=[Windows.Forms.Padding]::new(0,0,0,1)
     $btn.Cursor=if($Action){[Windows.Forms.Cursors]::Hand}else{[Windows.Forms.Cursors]::Default}
     $btn.Text=$Text
+    $btn.AccessibleName=$Text
     $btn.Tag=@{Action=$Action;Value=$Value;Role=$Role;Id=$Id}
     if($Action){
         $btn.add_Click({
