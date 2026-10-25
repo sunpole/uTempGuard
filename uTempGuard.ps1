@@ -70,6 +70,17 @@ function Show-GuardNotice {
 function Get-GuardCandidates {
     $nowSeconds = $script:clock.Elapsed.TotalSeconds
     $next = @{}; $hot = @()
+    $scope = $config.PSObject.Properties['AppCloseScope']
+    $scanApproved = ($null -ne $scope -and $scope.Value -eq 'ApprovedInteractive')
+    $approvedNames = @()
+    if ($scanApproved) {
+        foreach ($entry in @($config.AllowList)) {
+            if ($null -ne $entry -and $entry.Approved -is [bool] -and $entry.Approved -and
+                -not [string]::IsNullOrWhiteSpace([string]$entry.Path)) {
+                $approvedNames += [IO.Path]::GetFileNameWithoutExtension([string]$entry.Path)
+            }
+        }
+    }
     foreach ($proc in [Diagnostics.Process]::GetProcesses()) {
         try {
             $startUtc = $proc.StartTime.ToUniversalTime().ToString('o')
@@ -79,7 +90,9 @@ function Get-GuardCandidates {
             if (-not $script:previousProcesses.ContainsKey($key)) { continue }
             $prev = $script:previousProcesses[$key]
             $percent = Get-NormalizedCpuPercent -CpuSecondsDelta ($cpu-$prev.Cpu) -ElapsedSeconds ($nowSeconds-$prev.Time) -LogicalProcessors $logicalCount
-            if ($null -eq $percent -or $percent -le $config.CpuThresholdPercent) { continue }
+            if ($scanApproved) {
+                if ($proc.ProcessName -notin $approvedNames) { continue }
+            } elseif ($null -eq $percent -or $percent -le $config.CpuThresholdPercent) { continue }
             $owner = $null; $isService = $true
             $cim = Get-CimInstance Win32_Process -Filter "ProcessId=$($proc.Id)" -ErrorAction Stop
             $ownerResult = Invoke-CimMethod -InputObject $cim -MethodName GetOwnerSid -ErrorAction Stop
@@ -164,7 +177,9 @@ function Invoke-GuardIntent {
         if (-not $item.Eligibility.Allowed) { continue }
         try {
             $fresh = Read-AidaSensor -SensorId $config.SensorId -AidaPath $config.AidaPath -MaxAgeSeconds $config.MaxAgeSeconds -Context $script:context
-            if (-not $fresh.Healthy -or $fresh.TemperatureC -lt $config.ResumeBelowC) { break }
+            $freshSummary = if ($fresh.Healthy) { Read-GuardCpuTemperatureSummary -VerifiedSample $fresh } else { $null }
+            $freshMax = Get-VerifiedCpuMaximum -Primary $fresh -CpuSummary $freshSummary
+            if ($null -eq $freshMax -or $freshMax -lt $config.ResumeBelowC) { break }
             $candidate = $item.Candidate
             $actionKey='{0}|{1}' -f $candidate.Pid,$candidate.StartTimeUtc
             if ($script:lastActions.ContainsKey($actionKey) -and ($script:clock.Elapsed.TotalSeconds-$script:lastActions[$actionKey]) -lt 60) { continue }
