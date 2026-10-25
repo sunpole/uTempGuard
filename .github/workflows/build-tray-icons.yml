@@ -20,6 +20,8 @@ jobs:
           python-version: '3.11'
       - name: Install SVG rasterizer
         run: python -m pip install --disable-pip-version-check cairosvg Pillow
+      - name: Smoke-test original CorelDRAW reference SVG
+        run: python tools/test-build-tray-icons.py
       - name: Build cached tray frames
         run: python tools/build-tray-icons.py
       - name: Check generated files
