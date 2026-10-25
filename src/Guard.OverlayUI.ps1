@@ -5,6 +5,7 @@ function Update-GuardOverlayMenu {
     $script:menuFull.Checked = ($script:overlaySettings.Style -eq 'Full')
     $script:menuBackground.Checked = [bool]$script:overlaySettings.ShowBackground
     $script:menuVisible.Checked = [bool]$script:overlaySettings.Visible
+    if($null -ne $script:sourceMenus){Update-GuardSourceMenus}
 }
 function Set-GuardOverlayLayout {
     if ($null -eq $script:form) { return }
@@ -47,11 +48,11 @@ function Set-GuardOverlayPreference {
     catch { Write-GuardEvent 'OverlaySettingsError' @{Message=$_.Exception.Message} }
     Set-GuardOverlayLayout
     if ($null -ne $script:lastSample -and $null -ne $script:lastDecision) {
-        Update-GuardDisplay -Sample $script:lastSample -Decision $script:lastDecision -CpuSummary $script:lastCpuSummary
+        Update-GuardDisplay -Sample $script:lastSample -Decision $script:lastDecision -CpuSummary $script:lastCpuSummary -TemperatureSelection $script:lastDisplayTemperature
     }
 }
 function Update-GuardDisplay {
-    param([object]$Sample, [object]$Decision, [AllowNull()][object]$CpuSummary = $null)
+    param([object]$Sample, [object]$Decision, [AllowNull()][object]$CpuSummary = $null, [AllowNull()][object]$TemperatureSelection = $null)
     if ($null -eq $script:form) { return }
     $suffix = if ($SimulationPath) {'ИМИТАЦИЯ'} elseif ($config.Mode -eq 'Observe') {'НАБЛЮДЕНИЕ'} elseif (Test-LiveApproval) {'БОЕВОЙ РЕЖИМ'} else {'ДЕЙСТВИЯ ЗАБЛОКИРОВАНЫ'}
     $foreground = [Drawing.Color]::FromArgb(158,248,180)
@@ -70,9 +71,20 @@ function Update-GuardDisplay {
             $readoutTitle = 'CPU MAX'
             $sourceName = if ($CpuSummary.HottestId -eq 'TCPUPKG') { 'CPU Package' } else { 'CPU ' + $CpuSummary.HottestId }
         }
-        $shortText = ('{0} {1:N0}°C' -f $readoutTitle,$readout)
-        $fullText = ('{0}: {1:N0} °C' -f $sourceName,$readout) + [Environment]::NewLine + "$suffix | $($Decision.State)"
-        if ($readout -ge $config.WarningC -and $Decision.State -eq 'Normal') {
+        if($null -ne $TemperatureSelection){
+            if($TemperatureSelection.Healthy){
+                $readout=[double]$TemperatureSelection.MaxC
+                $sourceName=if($TemperatureSelection.HottestLabel){[string]$TemperatureSelection.HottestLabel}else{[string]$TemperatureSelection.HottestId}
+                $readoutTitle=if($script:temperaturePolicy.DisplayMode -in @('All','Custom')){'MAX'}else{'CPU MAX'}
+            } else {
+                $readoutTitle='TEMP'
+                $readout=$null
+                $sourceName='Выбранные датчики недоступны'
+            }
+        }
+        $shortText = if($null -eq $readout){'TEMP --°C'}else{('{0} {1:N0}°C' -f $readoutTitle,$readout)}
+        $fullText = if($null -eq $readout){$sourceName + [Environment]::NewLine + "$suffix | $($Decision.State)"}else{('{0}: {1:N0} °C' -f $sourceName,$readout) + [Environment]::NewLine + "$suffix | $($Decision.State)"}
+        if ($null -eq $TemperatureSelection -and $null -ne $readout -and $readout -ge $config.WarningC -and $Decision.State -eq 'Normal') {
             $foreground = [Drawing.Color]::White
             $background = [Drawing.Color]::DarkOrange
             if ($readout -ge $config.ShutdownC) { $background = [Drawing.Color]::DarkRed }
@@ -140,6 +152,7 @@ function Initialize-GuardOverlay {
     $script:menuFull.add_Click({ Set-GuardOverlayPreference -Name 'Style' -Value 'Full' })
     $script:menuCpuSensors=[Windows.Forms.ToolStripMenuItem]::new('Датчики CPU')
     $menu.Items.Add($script:menuCpuSensors) | Out-Null
+    Initialize-GuardSourceMenus -Menu $menu
     $menu.Items.Add('-') | Out-Null
     $fontIncrease=$menu.Items.Add('Шрифт крупнее')
     $fontIncrease.add_Click({ Set-GuardOverlayPreference -Name 'FontSize' -Value ([int]$script:overlaySettings.FontSize + 1) })
