@@ -19,6 +19,7 @@ $stopPath = Join-Path $DataDirectory 'stop.request'
 $logPath = Join-Path $DataDirectory 'events.jsonl'
 $started = [datetime]::UtcNow.ToString('o')
 $script:form = $null
+$script:overlayPreview = $false
 $script:tray = $null
 $script:lastNotice = [datetime]::MinValue
 $script:previousProcesses = @{}
