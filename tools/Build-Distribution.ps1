@@ -27,7 +27,7 @@ try{
     [IO.Directory]::CreateDirectory($bundle)|Out-Null
     $entrypoints=@(
         '00_START-HERE.cmd','Install-uTempGuard.cmd','Start-uTempGuard.cmd',
-        'Open-uTempGuard.cmd','Open-uTempGuard.ps1',
+        'Open-uTempGuard.cmd','Open-uTempGuard.ps1','Open-uTempGuard.vbs',
         'Open-Icon-Gallery.cmd','START-uTempGuard-Collector.cmd','Управление.cmd',
         'Setup-uTempGuard.ps1','Install.ps1','Manage.ps1','Launch.vbs',
         'Control.ps1','uTempGuard.ps1','Emergency-Control.ps1',
