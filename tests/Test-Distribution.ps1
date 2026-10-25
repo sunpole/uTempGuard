@@ -5,7 +5,7 @@ $root=Split-Path $PSScriptRoot -Parent
 $work=Join-Path $root ('artifacts\release-verification-'+[guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory($work)|Out-Null
 $out=Join-Path $work 'zips'
-$result=& (Join-Path $root 'tools\Build-Distribution.ps1') -Version '0.5.0' -ProjectRoot $root -OutputDirectory $out
+$result=& (Join-Path $root 'tools\Build-Distribution.ps1') -Version '0.5.0' -OutputDirectory $out
 if($null -eq $result -or -not (Test-Path -LiteralPath $result.ZipPath)){throw 'Release ZIP not built'}
 if(-not (Test-Path -LiteralPath $result.ChecksumPath)){throw 'Release checksum missing'}
 $sha=(Get-FileHash -LiteralPath $result.ZipPath -Algorithm SHA256).Hash.ToLowerInvariant()

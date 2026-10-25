@@ -2,11 +2,12 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version='0.5.0',
-    [string]$ProjectRoot=(Split-Path $PSScriptRoot -Parent),
+    [string]$ProjectRoot='',
     [string]$OutputDirectory=''
 )
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version 2.0
+if([string]::IsNullOrWhiteSpace($ProjectRoot)){$ProjectRoot=Split-Path $PSScriptRoot -Parent}
 $root=[IO.Path]::GetFullPath($ProjectRoot).TrimEnd('\','/')
 if(-not $OutputDirectory){$OutputDirectory=Join-Path $root 'artifacts\releases'}
 $output=[IO.Path]::GetFullPath($OutputDirectory)
