@@ -8,12 +8,19 @@ $ErrorActionPreference='Stop'
 Set-StrictMode -Version 2.0
 $root=Split-Path $PSScriptRoot -Parent
 Import-Module (Join-Path $root 'src\Guard.Overlay.psm1') -Force
+Import-Module (Join-Path $root 'src\Guard.TemperatureSources.psm1') -Force
 $DataDirectory=Join-Path $root 'artifacts\visual-preview-ui'
 [IO.Directory]::CreateDirectory($DataDirectory) | Out-Null
 $stopPath=Join-Path $DataDirectory 'stop.request'
 if (Test-Path -LiteralPath $stopPath) { Remove-Item -LiteralPath $stopPath }
 $script:overlaySettingsPath=Join-Path $DataDirectory 'overlay.json'
 $script:overlaySettings=Get-GuardOverlaySettings -Path $script:overlaySettingsPath
+$script:sourcePolicyPath=Join-Path $DataDirectory 'temperature-sources.json'
+$script:sourceApprovalPath=Join-Path $DataDirectory 'temperature-power-approval.json'
+$script:temperaturePolicy=Get-GuardTemperaturePolicy -Path $script:sourcePolicyPath
+$script:sourceMenus=$null
+$script:lastTemperatureCatalog=$null
+$script:lastDisplayTemperature=$null
 $script:form=$null
 $script:tray=$null
 $script:overlayPreview=$true
@@ -36,6 +43,7 @@ $script:lastDecision=[pscustomobject]@{
 function Test-LiveApproval { return $false }
 function Write-GuardEvent { param([string]$Event,[object]$Details) }
 . (Join-Path $root 'src\Guard.OverlayUI.ps1')
+. (Join-Path $root 'src\Guard.SourceMenu.ps1')
 try {
     Initialize-GuardOverlay
     Update-GuardDisplay -Sample $script:lastSample -Decision $script:lastDecision
