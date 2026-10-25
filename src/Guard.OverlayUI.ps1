@@ -64,11 +64,13 @@ function Update-GuardDisplay {
     } else {
         $readout = [double]$Sample.TemperatureC
         $sourceName = 'CPU Package'
+        $readoutTitle = 'CPU'
         if ($null -ne $CpuSummary -and $null -ne $CpuSummary.MaxC -and $CpuSummary.AvailableCount -ge 1) {
             $readout = [double]$CpuSummary.MaxC
+            $readoutTitle = 'CPU MAX'
             $sourceName = if ($CpuSummary.HottestId -eq 'TCPUPKG') { 'CPU Package' } else { 'CPU ' + $CpuSummary.HottestId }
         }
-        $shortText = ('CPU MAX {0:N0}°C' -f $readout)
+        $shortText = ('{0} {1:N0}°C' -f $readoutTitle,$readout)
         $fullText = ('{0}: {1:N0} °C' -f $sourceName,$readout) + [Environment]::NewLine + "$suffix | $($Decision.State)"
         if ($readout -ge $config.WarningC -and $Decision.State -eq 'Normal') {
             $foreground = [Drawing.Color]::White
@@ -97,6 +99,7 @@ function Update-GuardDisplay {
     if ($null -ne $script:menuCpuSensors) {
         $script:menuCpuSensors.DropDownItems.Clear()
         if ($null -eq $CpuSummary) {
+            $script:menuCpuSensors.Text = 'Датчики CPU: нет новых данных'
             $item=$script:menuCpuSensors.DropDownItems.Add('Нет подтверждённых данных ядер')
             $item.Enabled=$false
         } else {
