@@ -125,6 +125,7 @@
     "dashboard.noReading": "No verified sensor data",
     "dashboard.approved": "Approved · Live",
     "dashboard.notApproved": "Not approved · Observe / approval missing",
-    "home.dashboard": "Main window ↗"
+    "home.dashboard": "Main window ↗",
+    "dashboard.sensorBlocked": "Unverified sensors · actions blocked"
   }
 }
