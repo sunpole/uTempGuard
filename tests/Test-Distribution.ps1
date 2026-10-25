@@ -13,7 +13,7 @@ if($sha -cne $result.SHA256){throw 'Release checksum mismatch'}
 $extract=Join-Path $work 'extracted'
 Expand-Archive -LiteralPath $result.ZipPath -DestinationPath $extract
 $application=Join-Path $extract 'uTempGuard'
-foreach($relative in @('00_START-HERE.cmd','Install-uTempGuard.cmd','Open-uTempGuard.cmd','Open-uTempGuard.ps1',
+foreach($relative in @('00_START-HERE.cmd','Install-uTempGuard.cmd','Open-uTempGuard.cmd','Open-uTempGuard.ps1','Open-uTempGuard.vbs',
  'Setup-uTempGuard.ps1','Install.ps1','Launch.vbs','Manage.ps1','uTempGuard.ps1',
  'config.example.json','README.md','README_EN.md','src\Guard.Sensor.psm1',
  'src\Guard.ModernMenu.ps1','i18n\ru-RU.json','i18n\en-US.json',
