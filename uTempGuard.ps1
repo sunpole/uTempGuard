@@ -13,6 +13,7 @@ Import-Module (Join-Path $PSScriptRoot 'src\Guard.Core.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'src\Guard.Sensor.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'src\Guard.CpuSummary.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'src\Guard.Overlay.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'src\Guard.Notices.psm1') -Force
 $DataDirectory = [IO.Path]::GetFullPath($DataDirectory).TrimEnd('\')
 [IO.Directory]::CreateDirectory($DataDirectory) | Out-Null
 $statusPath = Join-Path $DataDirectory 'status.json'
@@ -23,6 +24,8 @@ $script:form = $null
 $script:overlayPreview = $false
 $script:tray = $null
 $script:lastNotice = [datetime]::MinValue
+$script:firstValidSensorSeen = $false
+$script:startupPendingLogged = $false
 $script:previousProcesses = @{}
 $script:clock = [Diagnostics.Stopwatch]::StartNew()
 $script:context = @{}
@@ -240,6 +243,10 @@ try {
             $script:lastCpuSummary=Read-GuardCpuTemperatureSummary -VerifiedSample $script:lastSample
             $candidates=@()
         }
+        if (-not $SimulationPath -and $script:lastSample.Healthy -and -not $script:firstValidSensorSeen) {
+            $script:firstValidSensorSeen = $true
+            Write-GuardEvent 'StartupTelemetryReady' @{ElapsedSeconds=[math]::Round($script:clock.Elapsed.TotalSeconds,2)}
+        }
         $decisionTemperature=Get-VerifiedCpuMaximum -Primary $script:lastSample -CpuSummary $script:lastCpuSummary
         $decision=Get-GuardDecision -Temperature $decisionTemperature -SensorHealthy $script:lastSample.Healthy -PreviousState $script:state -WarningC $config.WarningC -ResumeBelowC $config.ResumeBelowC -ShutdownC $config.ShutdownC
         if (-not $SimulationPath -and $decision.Intent -eq 'ReduceLoad' -and $config.EnableAppClose -and @($config.AllowList).Count -gt 0 -and (Test-LiveApproval)) {
@@ -247,7 +254,14 @@ try {
         }
         $script:state=$decision.State; $script:lastDecision=$decision; $script:count++
         if ($previousState -ne $script:state -or $script:count -eq 1) { Write-GuardEvent 'StateChanged' @{From=$previousState;To=$script:state;TemperatureC=$script:lastSample.TemperatureC;Error=$script:lastSample.Error} }
-        if ($script:state -ne 'Normal') { Show-GuardNotice $(if ($script:state -eq 'SensorFault') {'Нет достоверных данных CPU. Защитные действия заблокированы.'} else {"Температура CPU $($script:lastSample.TemperatureC) °C. Режим: $($config.Mode)."}) }
+        # Suppress the initial *popup only* while AIDA is starting. The fault
+        # state, CPU --C display, status and live-action veto remain unchanged.
+        $notice = Get-GuardNoticePolicy -State $script:state -VerifiedOnce ($script:firstValidSensorSeen -or [bool]$SimulationPath) -UptimeSeconds $script:clock.Elapsed.TotalSeconds
+        if ($notice.StartupPending -and -not $script:startupPendingLogged) {
+            $script:startupPendingLogged = $true
+            Write-GuardEvent 'StartupAwaitingAida' @{Reason=[string]$script:lastSample.Error}
+        }
+        if ($notice.Notify) { Show-GuardNotice $(if ($script:state -eq 'SensorFault') {'Нет достоверных данных CPU. Защитные действия заблокированы.'} else {"Температура CPU $($script:lastSample.TemperatureC) °C. Режим: $($config.Mode)."}) }
         Invoke-GuardIntent -Decision $decision -Candidates $candidates
         Update-GuardDisplay -Sample $script:lastSample -Decision $decision -CpuSummary $script:lastCpuSummary
         Write-GuardStatus -IsRunning $true -State $script:state -Sample $script:lastSample
