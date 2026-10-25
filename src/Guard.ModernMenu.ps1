@@ -1,5 +1,7 @@
 ﻿# uTempGuard Fluent-inspired Windows Forms menu.
 # UI only: delegates power approval/sensor validation to the existing guard.
+Add-Type -AssemblyName System.Drawing
+Add-Type -AssemblyName System.Windows.Forms
 $script:modernMenu = $null
 $script:modernBody = $null
 $script:modernHeaderTemperature = $null
