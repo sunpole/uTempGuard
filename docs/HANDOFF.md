@@ -76,3 +76,8 @@ Uninstall.ps1 удаляет только свой Startup ярлык и зап�
 ## Исправление сборки температур CPU, 25.10.2026
 
 Пользователь подтвердил `Read-AidaSensor` Healthy=True, Source=Registry, CPU Package=39, но `Read-GuardCpuTemperatureSummary` вернул `$null`. Исправление на отдельной ветке: краткие повторные чтения при рассогласованности двух снимков AIDA64, диагностический код через `-Diagnostic`, новый подтверждённый первичный образец для каждого повтора Enable, без обхода проверок. Проверять в GitHub Windows PowerShell 5.1, а затем на ПК в режиме Observe; при неуспехе собирать только Reason и AvailableCount, не распространять пути, ключи и персональные данные.
+
+
+## Разовый OS reboot в тесте
+
+tests/Invoke-OneShotRestartTest.ps1: Preview/Status/RestartOnce. Preview только имитирует 75 °C и показывает Critical/Shutdown; RestartOnce дополнительно проверяет действительный Live-статус и свежие 15 датчиков при температуре ниже 70 °C, дважды подтверждает температуру, запрашивает интерактивную фразу и пишет persistent one-shot метку. Затем запрос Restart-Computer без Force. Нет автозапуска теста, нет циклов, нет физического нагрева, config.json и live-approval.json не изменяются. CI исполняет только Preview.
