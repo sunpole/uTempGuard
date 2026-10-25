@@ -18,6 +18,11 @@ $SimulationPath=$null
 $script:context=@{}
 $script:clock=[Diagnostics.Stopwatch]::StartNew()
 $script:lastActions=@{}
+$script:temperaturePolicy=[pscustomobject]@{ShutdownMode='LegacyCpu';ShutdownIds=@()}
+$script:sourceApprovalPath=Join-Path $root 'artifacts\synthetic-no-approval.json'
+function Test-GuardActionSourceApproval {return $false}
+function Read-GuardTemperatureCatalog {return $null}
+function Get-GuardTemperatureSelection {return $null}
 $script:events=@()
 $script:boundaryCalls=0
 function Write-GuardEvent { param($Event,$Details) $script:events+=@{Event=$Event;Details=$Details} }
@@ -54,6 +59,20 @@ if((Get-VerifiedCpuMaximum -Primary $healthy -CpuSummary $summary) -ne 43){throw
 $checks+=2
 Invoke-GuardIntent -Decision ([pscustomobject]@{Intent='Shutdown';State='Critical';Temperature=80}) -Candidates @()
 if($script:boundaryCalls -ne 0){throw 'Cooled sensor allowed shutdown'};$checks++
+# Switching the shutdown selector to a new source must never fall back to
+# the original CPU shutdown trigger, even with a Live approval.
+$script:temperaturePolicy.ShutdownMode='Custom'
+$script:temperaturePolicy.ShutdownIds=@('TGPU1')
+function Test-GuardActionSourceApproval {return $false}
+Invoke-GuardIntent -Decision ([pscustomobject]@{Intent='Shutdown';State='Critical';Temperature=90}) -Candidates @()
+if($script:boundaryCalls -ne 0){throw 'Unapproved alternate source crossed power boundary'}
+$checks++
+function Test-GuardActionSourceApproval {return $true}
+function Read-GuardTemperatureCatalog {return [pscustomobject]@{Healthy=$true;Sensors=@()}}
+function Get-GuardTemperatureSelection {return [pscustomobject]@{Healthy=$true;MaxC=40}}
+Invoke-GuardIntent -Decision ([pscustomobject]@{Intent='Shutdown';State='Critical';Temperature=90}) -Candidates @()
+if($script:boundaryCalls -ne 0){throw 'Cooled alternate source crossed power boundary'}
+$checks++
 $report=[ordered]@{Passed=$true;Assertions=$checks;RealActionBoundaryCalls=$script:boundaryCalls;ApprovalFileCreated=$false;CheckedUtc=[datetime]::UtcNow.ToString('o')}
 [IO.File]::WriteAllText($ReportPath,($report|ConvertTo-Json),[Text.UTF8Encoding]::new($false))
 $report|ConvertTo-Json
