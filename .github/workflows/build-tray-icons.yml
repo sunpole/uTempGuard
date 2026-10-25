@@ -1,0 +1,50 @@
+name: Build native tray icons from user SVG
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'assets/logo/*.svg'
+      - 'tools/build-tray-icons.py'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install SVG rasterizer
+        run: python -m pip install --disable-pip-version-check cairosvg Pillow
+      - name: Smoke-test original CorelDRAW reference SVG
+        run: python tools/test-build-tray-icons.py
+      - name: Build cached tray frames
+        run: python tools/build-tray-icons.py
+      - name: Check generated files
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import base64
+          root=Path('assets/tray-icons')
+          files=list(root.glob('utg_*.png.base64')) if root.exists() else []
+          for file in files:
+              payload=base64.b64decode(file.read_text(encoding='ascii'), validate=True)
+              assert payload.startswith(b'\x89PNG\r\n\x1a\n'), file.name
+          print(f'Validated {len(files)} 64px frames.')
+          PY
+      - name: Commit only generated tray frames to main
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- assets/tray-icons/
+          if git diff --cached --quiet; then
+            echo "No changes in rendered tray frames."
+            exit 0
+          fi
+          git commit -m "assets: rasterize uploaded temperature SVGs for Windows tray"
+          git push origin HEAD:main

@@ -16,6 +16,7 @@ Import-Module (Join-Path $PSScriptRoot 'src\Guard.Overlay.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'src\Guard.Localization.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'src\Guard.Notices.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'src\Guard.TemperatureSources.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'src\Guard.TrayIconSelector.psm1') -Force
 $DataDirectory = [IO.Path]::GetFullPath($DataDirectory).TrimEnd('\')
 [IO.Directory]::CreateDirectory($DataDirectory) | Out-Null
 $statusPath = Join-Path $DataDirectory 'status.json'
@@ -220,6 +221,7 @@ function Invoke-GuardIntent {
 . (Join-Path $PSScriptRoot 'src\Guard.OverlayUI.ps1')
 . (Join-Path $PSScriptRoot 'src\Guard.SourceMenu.ps1')
 . (Join-Path $PSScriptRoot 'src\Guard.ModernMenu.ps1')
+. (Join-Path $PSScriptRoot 'src\Guard.TrayIconUI.ps1')
 
 try {
     $config = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -244,14 +246,24 @@ try {
     if(-not $Headless){$null=Initialize-GuardLocalization -DataDirectory $DataDirectory}
     if (-not $Headless) {
         Initialize-GuardOverlay
-        try { Initialize-GuardModernMenu }
+        try {
+            Initialize-GuardModernMenu
+            # Optional UI only. Failure to load a tray graphic cannot stop the guard.
+            try { Initialize-GuardTrayIcons }
+            catch { Write-GuardEvent 'TrayIconFallback' @{Message=$_.Exception.Message} }
+        }
         catch { Write-GuardEvent 'ModernMenuInitFallback' @{Message=$_.Exception.Message} }
     }
     $running=$true
     Write-GuardEvent 'Started' @{Version=$config.Version;Mode=$config.Mode;Simulation=[bool]$SimulationPath;LogicalProcessors=$logicalCount;ConfigPath=$ConfigPath;LiveApproved=(Test-LiveApproval)}
     $nextTick=0.0
     while (-not (Test-Path -LiteralPath $stopPath)) {
-        if ($null -ne $script:form) { [Windows.Forms.Application]::DoEvents() }
+        if ($null -ne $script:form) {
+            [Windows.Forms.Application]::DoEvents()
+            try { Update-GuardTrayIcons -ElapsedSeconds $script:clock.Elapsed.TotalSeconds }
+            catch { # No UI failure can interrupt thermal safety.
+            }
+        }
         if ($script:clock.Elapsed.TotalSeconds -lt $nextTick) { Start-Sleep -Milliseconds 100; continue }
         $nextTick=$script:clock.Elapsed.TotalSeconds+$config.PollSeconds
         $previousState=$script:state
@@ -310,6 +322,7 @@ try {
         }
         Invoke-GuardIntent -Decision $decision -Candidates $candidates
         Update-GuardDisplay -Sample $script:lastSample -Decision $decision -CpuSummary $script:lastCpuSummary -TemperatureSelection $script:lastDisplayTemperature
+        if(-not $Headless){try{Update-GuardTrayIcons -ElapsedSeconds $script:clock.Elapsed.TotalSeconds}catch{}}
         Write-GuardStatus -IsRunning $true -State $script:state -Sample $script:lastSample
         if ($script:count % 30 -eq 0) { Write-GuardEvent 'Sample' $script:lastSample }
         if ($MaxSamples -gt 0 -and $script:count -ge $MaxSamples) { break }
@@ -323,6 +336,7 @@ try {
 } finally {
     if ($ownsMutex) {
         if ($running) { try { Write-GuardStatus -IsRunning $false -State 'Stopped' -Sample $script:lastSample } catch {} }
+        try { Close-GuardTrayIcons } catch {}
         if ($null -ne $script:modernMenu) { try{Close-GuardModernMenu}catch{} }
         if ($null -ne $script:tray) { $script:tray.Visible=$false; $script:tray.Dispose() }
         if ($null -ne $script:form) { $script:form.Dispose() }
