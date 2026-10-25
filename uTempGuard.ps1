@@ -218,6 +218,7 @@ function Invoke-GuardIntent {
 }
 . (Join-Path $PSScriptRoot 'src\Guard.OverlayUI.ps1')
 . (Join-Path $PSScriptRoot 'src\Guard.SourceMenu.ps1')
+. (Join-Path $PSScriptRoot 'src\Guard.ModernMenu.ps1')
 
 try {
     $config = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -239,7 +240,11 @@ try {
     $simulation = @()
     if ($SimulationPath) { $simulation = Get-Content -LiteralPath $SimulationPath -Raw | ConvertFrom-Json; if ($simulation.Count -eq 0) { throw 'Empty simulation.' } }
     $script:overlaySettings = Get-GuardOverlaySettings -Path $script:overlaySettingsPath
-    if (-not $Headless) { Initialize-GuardOverlay }
+    if (-not $Headless) {
+        Initialize-GuardOverlay
+        try { Initialize-GuardModernMenu }
+        catch { Write-GuardEvent 'ModernMenuInitFallback' @{Message=$_.Exception.Message} }
+    }
     $running=$true
     Write-GuardEvent 'Started' @{Version=$config.Version;Mode=$config.Mode;Simulation=[bool]$SimulationPath;LogicalProcessors=$logicalCount;ConfigPath=$ConfigPath;LiveApproved=(Test-LiveApproval)}
     $nextTick=0.0
@@ -307,6 +312,7 @@ try {
 } finally {
     if ($ownsMutex) {
         if ($running) { try { Write-GuardStatus -IsRunning $false -State 'Stopped' -Sample $script:lastSample } catch {} }
+        if ($null -ne $script:modernMenu) { try{Close-GuardModernMenu}catch{} }
         if ($null -ne $script:tray) { $script:tray.Visible=$false; $script:tray.Dispose() }
         if ($null -ne $script:form) { $script:form.Dispose() }
         $mutex.ReleaseMutex()
