@@ -18,6 +18,11 @@ $SimulationPath=$null
 $script:context=@{}
 $script:clock=[Diagnostics.Stopwatch]::StartNew()
 $script:lastActions=@{}
+$script:temperaturePolicy=[pscustomobject]@{ShutdownMode='LegacyCpu';ShutdownIds=@()}
+$script:sourceApprovalPath=Join-Path $root 'artifacts\synthetic-no-approval.json'
+function Test-GuardActionSourceApproval {return $false}
+function Read-GuardTemperatureCatalog {return $null}
+function Get-GuardTemperatureSelection {return $null}
 $script:events=@()
 $script:boundaryCalls=0
 function Write-GuardEvent { param($Event,$Details) $script:events+=@{Event=$Event;Details=$Details} }
