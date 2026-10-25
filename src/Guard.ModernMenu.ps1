@@ -400,6 +400,11 @@ function Invoke-GuardModernAction {
             try{Confirm-GuardActionSource}
             finally{$script:modernModal=$false}
         }
+        'OpenDashboard' {
+            Show-GuardDashboard
+            if($null -ne $script:modernMenu){$script:modernMenu.Hide()}
+            return
+        }
         'OpenGallery' {
             $file=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\docs\icon-gallery.html'))
             if(-not (Test-Path -LiteralPath $file -PathType Leaf)){throw 'Icon gallery is not installed'}
