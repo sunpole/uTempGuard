@@ -70,7 +70,7 @@ function Test-GuardCpuRegistrySnapshot {
     if ($parsedClock.TimeOfDay -ne $verifiedHeartbeat.TimeOfDay) { return (& $fail 'HeartbeatMismatch') }
 
     if ($Values.Contains('Value.SDATE')) {
-        $dateFormats=@('M/d/yyyy','MM/dd/yyyy','yyyy-MM-dd','d.M.yyyy','dd.MM.yyyy','d/M/yyyy','dd/MM/yyyy')
+        [string[]]$dateFormats=@('M/d/yyyy','MM/dd/yyyy','yyyy-MM-dd','d.M.yyyy','dd.MM.yyyy','d/M/yyyy','dd/MM/yyyy')
         $parsedDate=[datetime]::MinValue
         if (-not [datetime]::TryParseExact([string]$Values['Value.SDATE'],$dateFormats,
             [Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::None,
