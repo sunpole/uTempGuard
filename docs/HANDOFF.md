@@ -111,3 +111,10 @@ i18n/ru-RU.json + en-US.json — словари единого schemaVersion=1, 
 Состояние пользователя перед обновлением: Live, MonitorRunning=True, ForcedShutdownArmed=False, ShutdownSensorMode=All, ShutdownSourceApproved=False. НЕ писать, что выключение на 75°C подтверждено. Отдельно согласовать реальный источник выключения и безопасное подтверждение.
 
 Скриншоты пользователя уже перемещены в docs/screenshots, восстановлены из stash и сохранены ЛОКАЛЬНО коммитом 9379673. push был отклонён из-за удалённых коммитов. После объединения PR #11 пользователь должен сам сделать git pull --rebase origin main и git push origin main, без reset/clean/force. Эти JPG ещё не опубликованы, поскольку у нас нет их содержимого в репозитории.
+
+
+## 2026-10-25 — v0.4.1 исправление реального Windows GUI
+
+По предоставленным скриншотам v0.4.0: верхний пункт submenu частично заезжает под шапку/официальный SVG, Back недоступен, строки информации похожи на мёртвые кнопки, меню Updater не может обновлять при untracked файлах. В src/Guard.ModernMenu.ps1 шапка/body/footer переведены в TableLayoutPanel с закреплённой кнопкой Back; static information — Labels. «Официальный SVG» стал работающей ссылкой; встроена локальная галерея docs/icon-gallery.html всех 28 CorelDRAW температурных SVG с имитацией 400ms в браузере. AIDA/Live/power modes не менялись.
+
+Update-uTempGuard.ps1 по-прежнему требует чистые **отслеживаемые** файлы и подтверждение UPDATE. Несвязанные untracked (скриншоты) не блокируют Git ff-only, конфликт с incoming добавленным файлом проверяется заранее, Git также сам блокирует перезапись. Не использовать stash/reset автоматически. Windows PowerShell 5.1 tests/Test-UpdaterUntracked.ps1 запускает в песочнице фальшивый git.exe и не касается реального origin. Реальное UI-поведение после git pull проверять по скриншоту пользователя.

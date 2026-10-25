@@ -4,6 +4,7 @@ Add-Type -AssemblyName System.Windows.Forms
 $script:modernMenu=$null
 $script:modernBody=$null
 $script:modernSubtitle=$null
+$script:modernBackButton=$null
 $script:modernIcon=$null
 $script:modernImage=$null
 $script:modernModal=$false
@@ -100,6 +101,23 @@ function New-GuardModernRow {
 }
 function Add-GuardModernRow {
     param([string]$Text,[string]$Action='',[string]$Value='',[string]$Role='',[string]$Id='',[switch]$Accent,[switch]$Danger,[switch]$Warning)
+    if([string]::IsNullOrWhiteSpace($Action)){
+        # Static information is a Label, never a disabled button pretending to be clickable.
+        $info=[Windows.Forms.Label]::new()
+        $info.Width=342
+        $info.Height=$script:modernRowHeight
+        $info.BackColor=$script:modernDark
+        $info.ForeColor=if($Warning){$script:modernWarning}else{$script:modernMuted}
+        $info.Font=[Drawing.Font]::new('Segoe UI',[single]9)
+        $info.AutoEllipsis=$true
+        $info.TextAlign=[Drawing.ContentAlignment]::MiddleLeft
+        $info.Padding=[Windows.Forms.Padding]::new(8,0,4,0)
+        $info.Margin=[Windows.Forms.Padding]::new(0,0,0,1)
+        $info.Text=$Text
+        $info.AccessibleName=$Text
+        [void]$script:modernBody.Controls.Add($info)
+        return
+    }
     $btn=New-GuardModernRow -Text $Text -Action $Action -Value $Value -Role $Role -Id $Id -Accent:$Accent -Danger:$Danger -Warning:$Warning
     [void]$script:modernBody.Controls.Add($btn)
 }
@@ -156,6 +174,16 @@ function Update-GuardModernLayout {
         $script:modernMenu.Location=[Drawing.Point]::new([int]$x,[int]$y)
     }
 }
+function Get-GuardModernParentPage {
+    param([string]$Page)
+    if($Page -in @('DisplayCustom','ShutdownCustom')){return $(if($Page -eq 'DisplayCustom'){'Display'}else{'Shutdown'})}
+    if($Page -in @('Opacity','Positions')){return 'Appearance'}
+    return 'Home'
+}
+function Invoke-GuardModernBack {
+    if($script:modernPage -eq 'Home'){return}
+    Render-GuardModernPage -Page (Get-GuardModernParentPage -Page $script:modernPage)
+}
 function Render-GuardModernPage {
     param([string]$Page='Home')
     if($null -eq $script:modernMenu -or $null -eq $script:modernBody){return}
@@ -165,13 +193,10 @@ function Render-GuardModernPage {
         $previous=@($script:modernBody.Controls)
         $script:modernBody.Controls.Clear()
         foreach($item in $previous){$item.Dispose()}
-        if($Page -ne 'Home'){
-            $back=if($Page -like 'DisplayCustom'){'Display'}
-                elseif($Page -like 'ShutdownCustom'){'Shutdown'}
-                elseif($Page -in @('Opacity','Positions')){'Appearance'}
-                else{'Home'}
-            Add-GuardModernRow -Text (Get-GuardUiText 'nav.back') -Action 'Page' -Value $back -Accent
-            Add-GuardModernSeparator
+        # Back navigation lives in the fixed header, outside scrolling content.
+        if($null -ne $script:modernBackButton){
+            $script:modernBackButton.Visible=($Page -ne 'Home')
+            $script:modernBackButton.AccessibleName=Get-GuardUiText 'nav.back'
         }
         switch($Page){
             'Home' {
@@ -227,6 +252,7 @@ function Render-GuardModernPage {
                 Add-GuardModernRow -Text ($label+' · '+$shown) -Action 'ToggleVisible'
                 Add-GuardModernRow -Text (Get-GuardUiText 'appearance.opacity') -Action 'Page' -Value 'Opacity'
                 Add-GuardModernRow -Text (Get-GuardUiText 'appearance.position') -Action 'Page' -Value 'Positions'
+                Add-GuardModernRow -Text (Get-GuardUiText 'gallery.open') -Action 'OpenGallery'
                 Add-GuardModernSeparator
                 Add-GuardModernRow -Text (Get-GuardUiText 'appearance.fontUp') -Action 'Font' -Value 'Increase'
                 Add-GuardModernRow -Text (Get-GuardUiText 'appearance.fontDown') -Action 'Font' -Value 'Decrease'
@@ -262,9 +288,11 @@ function Render-GuardModernPage {
             }
             'About' {
                 Add-GuardModernRow -Text (Get-GuardUiText 'page.about')
-                foreach($key in @('about.version','about.details','about.brand','about.sources')){
+                foreach($key in @('about.version','about.details','about.sources')){
                     Add-GuardModernRow -Text (Get-GuardUiText $key)
                 }
+                Add-GuardModernRow -Text (Get-GuardUiText 'about.logoLink') -Action 'OpenUrl' -Value 'https://github.com/sunpole/uTempGuard/blob/main/assets/u_logo_tempg2.svg'
+                Add-GuardModernRow -Text (Get-GuardUiText 'gallery.open') -Action 'OpenGallery'
                 Add-GuardModernRow -Text (Get-GuardUiText 'about.github') -Action 'OpenUrl' -Value 'https://github.com/sunpole/uTempGuard'
                 Add-GuardModernRow -Text (Get-GuardUiText 'about.release') -Action 'OpenUrl' -Value 'https://github.com/sunpole/uTempGuard/releases/latest'
                 Add-GuardModernRow -Text (Get-GuardUiText 'about.docs') -Action 'OpenUrl' -Value 'https://github.com/sunpole/uTempGuard#readme'
@@ -371,12 +399,20 @@ function Invoke-GuardModernAction {
             try{Confirm-GuardActionSource}
             finally{$script:modernModal=$false}
         }
+        'OpenGallery' {
+            $file=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\docs\icon-gallery.html'))
+            if(-not (Test-Path -LiteralPath $file -PathType Leaf)){throw 'Icon gallery is not installed'}
+            Start-Process -FilePath $file
+            if($null -ne $script:modernMenu){$script:modernMenu.Hide()}
+            return
+        }
         'CheckUpdates' {Start-GuardUpdater -Mode Preview;return}
         'ApplyUpdate' {if(-not [bool]$SimulationPath){Start-GuardUpdater -Mode Apply};return}
         'OpenUrl' {
             if($Value -notin @('https://github.com/sunpole/uTempGuard',
                 'https://github.com/sunpole/uTempGuard/releases/latest',
-                'https://github.com/sunpole/uTempGuard#readme')){return}
+                'https://github.com/sunpole/uTempGuard#readme',
+                'https://github.com/sunpole/uTempGuard/blob/main/assets/u_logo_tempg2.svg')){return}
             Start-Process -FilePath $Value
             $script:modernMenu.Hide();return
         }
@@ -417,13 +453,31 @@ function Initialize-GuardModernMenu {
     $form.ForeColor=$script:modernText
     $form.ClientSize=[Drawing.Size]::new($script:modernWidth,400)
     $form.KeyPreview=$true
-    $form.add_KeyDown({param($s,$e) if($e.KeyCode -eq [Windows.Forms.Keys]::Escape){$s.Hide()}})
+    $form.add_KeyDown({param($s,$e)
+        if($e.KeyCode -eq [Windows.Forms.Keys]::Escape){
+            if($script:modernPage -eq 'Home'){$s.Hide()}
+            else{Invoke-GuardModernBack}
+            $e.Handled=$true
+        }
+    })
     $form.add_Deactivate({if(-not $script:modernModal){$script:modernMenu.Hide()}})
+    # Strict three-row layout prevents the header from covering the first menu row.
+    $layout=[Windows.Forms.TableLayoutPanel]::new()
+    $layout.Dock=[Windows.Forms.DockStyle]::Fill
+    $layout.ColumnCount=1
+    $layout.RowCount=3
+    $layout.Margin=[Windows.Forms.Padding]::new(0)
+    $layout.Padding=[Windows.Forms.Padding]::new(0)
+    [void]$layout.ColumnStyles.Add([Windows.Forms.ColumnStyle]::new([Windows.Forms.SizeType]::Percent,[single]100))
+    [void]$layout.RowStyles.Add([Windows.Forms.RowStyle]::new([Windows.Forms.SizeType]::Absolute,[single]$script:modernHeaderHeight))
+    [void]$layout.RowStyles.Add([Windows.Forms.RowStyle]::new([Windows.Forms.SizeType]::Percent,[single]100))
+    [void]$layout.RowStyles.Add([Windows.Forms.RowStyle]::new([Windows.Forms.SizeType]::Absolute,[single]$script:modernFooterHeight))
+    [void]$form.Controls.Add($layout)
     $header=[Windows.Forms.Panel]::new()
-    $header.Dock='Top'
-    $header.Height=$script:modernHeaderHeight
+    $header.Dock=[Windows.Forms.DockStyle]::Fill
+    $header.Margin=[Windows.Forms.Padding]::new(0)
     $header.BackColor=[Drawing.ColorTranslator]::FromHtml('#17263D')
-    [void]$form.Controls.Add($header)
+    $layout.Controls.Add($header,0,0)
     $logo=Get-GuardOfficialLogo
     if($null -ne $logo){
         $iconbox=[Windows.Forms.PictureBox]::new()
@@ -445,9 +499,24 @@ function Initialize-GuardModernMenu {
     $subtitle.Bounds=[Drawing.Rectangle]::new(64,29,296,18)
     [void]$header.Controls.Add($subtitle)
     $script:modernSubtitle=$subtitle
+    $backButton=[Windows.Forms.Button]::new()
+    $backButton.Text='‹'
+    $backButton.Font=[Drawing.Font]::new('Segoe UI',[single]19,[Drawing.FontStyle]::Bold)
+    $backButton.FlatStyle=[Windows.Forms.FlatStyle]::Flat
+    $backButton.FlatAppearance.BorderSize=0
+    $backButton.FlatAppearance.MouseOverBackColor=$script:modernHover
+    $backButton.BackColor=[Drawing.ColorTranslator]::FromHtml('#17263D')
+    $backButton.ForeColor=$script:modernAccent
+    $backButton.Bounds=[Drawing.Rectangle]::new(327,7,34,36)
+    $backButton.Cursor=[Windows.Forms.Cursors]::Hand
+    $backButton.Visible=$false
+    $backButton.add_Click({Invoke-GuardModernBack})
+    [void]$header.Controls.Add($backButton)
+    $backButton.BringToFront()
+    $script:modernBackButton=$backButton
     $footer=[Windows.Forms.Panel]::new()
-    $footer.Dock='Bottom'
-    $footer.Height=$script:modernFooterHeight
+    $footer.Dock=[Windows.Forms.DockStyle]::Fill
+    $footer.Margin=[Windows.Forms.Padding]::new(0)
     $footer.BackColor=$script:modernDark
     $tip=[Windows.Forms.Label]::new()
     $tip.Text='uTempGuard · github.com/sunpole/uTempGuard'
@@ -456,17 +525,16 @@ function Initialize-GuardModernMenu {
     $tip.Dock='Fill'
     $tip.Font=[Drawing.Font]::new('Segoe UI',[single]8)
     [void]$footer.Controls.Add($tip)
-    [void]$form.Controls.Add($footer)
+    $layout.Controls.Add($footer,0,2)
     $body=[Windows.Forms.FlowLayoutPanel]::new()
-    $body.Dock='Fill'
+    $body.Dock=[Windows.Forms.DockStyle]::Fill
+    $body.Margin=[Windows.Forms.Padding]::new(0)
     $body.FlowDirection=[Windows.Forms.FlowDirection]::TopDown
     $body.WrapContents=$false
     $body.AutoScroll=$false
     $body.Padding=[Windows.Forms.Padding]::new(7,8,0,8)
     $body.BackColor=$script:modernDark
-    [void]$form.Controls.Add($body)
-    $header.BringToFront()
-    $footer.BringToFront()
+    $layout.Controls.Add($body,0,1)
     $script:modernMenu=$form
     $script:modernBody=$body
     if($null -ne $logo){
@@ -493,6 +561,7 @@ function Initialize-GuardModernMenu {
 function Close-GuardModernMenu {
     if($null -ne $script:modernMenu){$script:modernMenu.Hide();$script:modernMenu.Dispose();$script:modernMenu=$null}
     $script:modernSubtitle=$null
+    $script:modernBackButton=$null
     if($null -ne $script:modernIcon){$script:modernIcon.Dispose();$script:modernIcon=$null}
     if($null -ne $script:modernImage){$script:modernImage.Dispose();$script:modernImage=$null}
 }

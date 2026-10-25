@@ -70,6 +70,16 @@ function Write-GuardEvent{param($Event,$Details)}
 try{
     Initialize-GuardModernMenu
     Render-GuardModernPage -Page 'Home'
+    # Dock layout: header/content/footer are separate table rows, never overlapping.
+    $layout=@($script:modernMenu.Controls|Where-Object {$_ -is [Windows.Forms.TableLayoutPanel]})
+    if($layout.Count -ne 1){throw 'Expected one non-overlapping TableLayoutPanel'}
+    if($layout[0].GetRow($script:modernBody) -ne 1){
+       throw 'Body must occupy the middle, separate table row'
+    }
+    if($null -eq $script:modernBackButton -or
+       $script:modernBackButton.Parent -ne $layout[0].GetControlFromPosition(0,0)){
+       throw 'Back button must remain in the independent fixed header'
+    }
     if($null -eq $script:modernMenu -or $script:modernBody.Controls.Count -lt 12){
         throw 'Main dark context panel not created with expected actions'
     }
@@ -121,6 +131,20 @@ try{
     }
     Render-GuardModernPage -Page 'Positions'
     if(@($script:modernBody.Controls | Where-Object {$_.Text -match 'Справа'}).Count -lt 2){throw 'Position controls missing'}
+    Render-GuardModernPage -Page 'About'
+    $logoLink=@($script:modernBody.Controls|Where-Object {$_ -is [Windows.Forms.Button] -and $_.Tag.Action -eq 'OpenUrl' -and $_.Tag.Value -match 'u_logo_tempg2.svg'})
+    if($logoLink.Count -ne 1){throw 'Official SVG link is not clickable'}
+    $gallery=@($script:modernBody.Controls|Where-Object {$_ -is [Windows.Forms.Button] -and $_.Tag.Action -eq 'OpenGallery'})
+    if($gallery.Count -ne 1){throw 'Gallery is not reachable from About menu'}
+    $description=@($script:modernBody.Controls|Where-Object {$_.Text -match 'Независимые датчики'})
+    if($description.Count -ne 1 -or $description[0] -is [Windows.Forms.Button]){
+        throw 'Static description must be a Label, not a dead button'
+    }
+    Invoke-GuardModernBack
+    if($script:modernPage -ne 'Home'){throw 'Back navigation from submenu failed'}
+    Render-GuardModernPage -Page 'DisplayCustom'
+    Invoke-GuardModernBack
+    if($script:modernPage -ne 'Display'){throw 'Custom mode back navigation failed'}
     Render-GuardModernPage -Page 'About'
     if(@($script:modernBody.Controls | Where-Object {$_.Text -match 'GitHub'}).Count -lt 1){
         throw 'About/repository action missing'

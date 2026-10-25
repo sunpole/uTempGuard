@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>uTempGuard · Галерея иконок</title>
+<style>
+:root{color-scheme:dark;font-family:Segoe UI,Inter,system-ui,sans-serif;font-size:14px}
+*{box-sizing:border-box}
+body{margin:0;background:#0b1320;color:#eaf2ff;min-width:320px}
+header{padding:26px clamp(15px,4vw,48px);background:linear-gradient(135deg,#1e3652,#10192b);border-bottom:1px solid #30445d}
+h1{font-size:24px;margin:0 0 6px;letter-spacing:.2px}
+h2{font-size:17px}
+p{color:#aebed0;line-height:1.6}
+main{max-width:1360px;margin:auto;padding:22px 24px 60px}
+.toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:14px 0 24px}
+button,select{border:1px solid #3a5272;border-radius:9px;background:#1a2a40;color:#eff7ff;padding:10px 13px;font:inherit;cursor:pointer}
+button:hover{background:#294365}
+button[aria-pressed=true]{background:#116186;border-color:#22d3ee}
+label{display:inline-flex;gap:10px;align-items:center;color:#dce7f7}
+input[type=range]{accent-color:#22d3ee}
+small,.micro{color:#aebed0}
+.counter{background:#172d43;padding:8px 10px;border-radius:9px}
+.viewer{border:1px solid #324765;border-radius:17px;background:#14243a;padding:18px;display:grid;grid-template-columns:160px 1fr;gap:24px;align-items:center;margin-bottom:25px}
+.hero-icon{height:142px;width:142px;border-radius:17px;display:grid;place-items:center;background:#0b1624}
+.hero-icon img{width:96px;height:96px;object-fit:contain}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(144px,1fr));gap:12px}
+.tile{border:1px solid #263a55;border-radius:12px;background:#16253a;padding:12px;text-align:center;min-height:142px}
+.tile img{height:70px;width:70px;object-fit:contain;margin:8px 0 12px}
+.tile strong{display:block;font-weight:600;color:#e7f2fc}
+.tile span{font-size:11px;color:#9caec2;overflow-wrap:anywhere}
+.light .tile,.light .hero-icon{background:#ecf1f7;color:#162538}
+.light .tile strong,.light .tile span{color:#1a304a}
+.light .viewer{background:#dbe4ef;color:#172a3f}
+.light .viewer p{color:#40516a}
+.warn{color:#f5c16f}
+details{margin-top:20px}
+@media(max-width:600px){.viewer{grid-template-columns:1fr;text-align:center}.hero-icon{margin:auto}}
+</style>
+</head>
+<body>
+<header>
+<h1>uTempGuard · Галерея иконок</h1>
+<p>Оригинальные SVG из CorelDRAW. Просмотр всех 28 файлов в исходном векторном качестве — без изменения данных датчиков и без выключения ПК.</p>
+</header>
+<main>
+<div class="toolbar" role="group" aria-label="Просмотр иконок">
+<button id="dark" aria-pressed="true">Тёмная панель · w</button>
+<button id="light" aria-pressed="false">Светлая панель · b</button>
+<label>Температура <input id="temperature" type="range" min="0" max="109" value="41" step="1"><strong id="value">41°C</strong></label>
+<button id="play" aria-pressed="false">▶ Демонстрация мигания</button>
+<span class="counter" id="count"></span>
+</div>
+<section class="viewer" id="viewer">
+<div class="hero-icon"><img id="hero" alt="Выбранная температурная иконка"></div>
+<div>
+<h2 id="selection">utg_w_040.svg</h2>
+<p>Проверь изображение при исходном разрешении и на размере значка Windows — 32 px.</p>
+<div class="toolbar">
+<label>Масштаб <select id="scale"><option value="32">32 px (трей)</option><option value="64">64 px</option><option value="128" selected>128 px</option></select></label>
+</div>
+<small>Мигание чередует обычный и active-кадр при 80 °C и выше каждые 0,4 секунды. Это только предпросмотр, без нагрева CPU.</small>
+</div>
+</section>
+<h2>Все состояния · <span id="themeName">тёмная панель</span></h2>
+<div class="grid" id="grid" aria-label="Иконки текущей темы"></div>
+<details><summary>Где редактировать исходники?</summary>
+<p>Исходные файлы: <code>assets/logo/utg_w_*.svg</code> и <code>assets/logo/utg_b_*.svg</code>. Изменяй их в CorelDRAW, сохраняй под прежним именем, затем отправляй изменения в GitHub. GitHub Actions заново создаст 64px кадры, которые uTempGuard покажет в трее. Эта страница отображает исходные SVG, а не переработанные PNG.</p>
+</details>
+</main>
+<script>
+(function(){
+"use strict";
+const root="../assets/logo/";
+const themeButtons={dark:document.getElementById("dark"),light:document.getElementById("light")};
+const grid=document.getElementById("grid"),hero=document.getElementById("hero"),selection=document.getElementById("selection");
+const temp=document.getElementById("temperature"),value=document.getElementById("value"),count=document.getElementById("count");
+const scale=document.getElementById("scale"),viewer=document.getElementById("viewer"),play=document.getElementById("play");
+const codes=["000","010","020","030","040","050","060","070","080","090","100"];
+let theme="w",animate=false,phase=false;
+function path(code,active=false){return root+"utg_"+theme+"_"+code+(active?"_active":"")+".svg"}
+function image(file,alt){const el=document.createElement("img");el.src=file;el.alt=alt;el.loading="lazy";el.addEventListener("error",()=>{el.alt=alt+" — файл не найден";el.style.opacity=".25"});return el}
+function renderGrid(){
+grid.replaceChildren();
+let total=0;
+for(const code of codes){
+for(const active of [false,true]){
+if(active&&Number(code)<80)continue;
+const file=path(code,active),name=file.split("/").pop();
+const tile=document.createElement("div");tile.className="tile";
+tile.appendChild(image(file,name));
+const title=document.createElement("strong");title.textContent=Number(code)+"–"+(Number(code)===100?"110":Number(code)+9)+"°C"+(active?" ⚠":"");
+tile.appendChild(title);
+const filename=document.createElement("span");filename.textContent=name;tile.appendChild(filename);
+tile.tabIndex=0;tile.title="Нажми, чтобы просмотреть "+name;
+tile.addEventListener("click",()=>{temp.value=code;phase=active;renderHero()});
+tile.addEventListener("keydown",ev=>{if(ev.key==="Enter"){tile.click()}});
+grid.appendChild(tile);total++;
+}}
+count.textContent=total+" SVG на тему · всего 28 SVG";
+}
+function renderHero(){
+const c=String(Math.min(100,Math.floor(Number(temp.value)/10)*10)).padStart(3,"0");
+const active=Number(c)>=80&&phase;
+const file=path(c,active);
+hero.src=file;hero.alt="Пример "+file.split("/").pop();selection.textContent=file.split("/").pop();
+value.textContent=temp.value+"°C";
+const pixels=Number(scale.value);
+hero.style.width=pixels+"px";hero.style.height=pixels+"px";
+}
+function setTheme(next){
+theme=next;viewer.classList.toggle("light",theme==="b");
+document.body.classList.toggle("light",theme==="b");
+themeButtons.dark.setAttribute("aria-pressed",String(theme==="w"));
+themeButtons.light.setAttribute("aria-pressed",String(theme==="b"));
+document.getElementById("themeName").textContent=theme==="w"?"тёмная панель":"светлая панель";
+renderGrid();renderHero();
+}
+themeButtons.dark.addEventListener("click",()=>setTheme("w"));
+themeButtons.light.addEventListener("click",()=>setTheme("b"));
+temp.addEventListener("input",()=>{phase=false;renderHero()});
+scale.addEventListener("change",renderHero);
+play.addEventListener("click",()=>{animate=!animate;play.textContent=animate?"■ Остановить мигание":"▶ Демонстрация мигания";play.setAttribute("aria-pressed",String(animate));phase=false;renderHero()});
+setInterval(()=>{if(!animate)return;phase=!phase;renderHero()},400);
+renderGrid();renderHero();
+})();
+</script>
+</body>
+</html>

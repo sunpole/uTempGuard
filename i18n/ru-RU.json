@@ -77,7 +77,7 @@
     "updates.docs": "Документация ↗",
     "updates.github": "Исходный код ↗",
     "updates.manual": "Обновление запускается отдельно",
-    "about.version": "Версия интерфейса 0.4.0",
+    "about.version": "Версия интерфейса 0.4.1",
     "about.details": "Мониторинг AIDA64 · Windows",
     "about.brand": "Официальный SVG-логотип",
     "about.sources": "Независимые датчики показа и защиты",
@@ -105,6 +105,9 @@
     "fallback.showMode": "Датчики для показа",
     "fallback.sourceConfirm": "Подтвердить датчики…",
     "fallback.sensorWaiting": "Ожидание AIDA64",
-    "home.about": "О программе ›"
+    "home.about": "О программе ›",
+    "gallery.open": "Иконки · галерея 28 SVG ↗",
+    "gallery.edit": "Просмотр 32 px, обе темы и мигание",
+    "about.logoLink": "Официальный SVG ↗"
   }
 }
