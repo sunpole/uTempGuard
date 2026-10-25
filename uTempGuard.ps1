@@ -70,6 +70,17 @@ function Show-GuardNotice {
 function Get-GuardCandidates {
     $nowSeconds = $script:clock.Elapsed.TotalSeconds
     $next = @{}; $hot = @()
+    $scope = $config.PSObject.Properties['AppCloseScope']
+    $scanApproved = ($null -ne $scope -and $scope.Value -eq 'ApprovedInteractive')
+    $approvedNames = @()
+    if ($scanApproved) {
+        foreach ($entry in @($config.AllowList)) {
+            if ($null -ne $entry -and $entry.Approved -is [bool] -and $entry.Approved -and
+                -not [string]::IsNullOrWhiteSpace([string]$entry.Path)) {
+                $approvedNames += [IO.Path]::GetFileNameWithoutExtension([string]$entry.Path)
+            }
+        }
+    }
     foreach ($proc in [Diagnostics.Process]::GetProcesses()) {
         try {
             $startUtc = $proc.StartTime.ToUniversalTime().ToString('o')
@@ -79,7 +90,10 @@ function Get-GuardCandidates {
             if (-not $script:previousProcesses.ContainsKey($key)) { continue }
             $prev = $script:previousProcesses[$key]
             $percent = Get-NormalizedCpuPercent -CpuSecondsDelta ($cpu-$prev.Cpu) -ElapsedSeconds ($nowSeconds-$prev.Time) -LogicalProcessors $logicalCount
-            if ($null -eq $percent -or $percent -le $config.CpuThresholdPercent) { continue }
+            if ($null -eq $percent) { continue }
+            if ($scanApproved) {
+                if ($proc.ProcessName -notin $approvedNames) { continue }
+            } elseif ($percent -le $config.CpuThresholdPercent) { continue }
             $owner = $null; $isService = $true
             $cim = Get-CimInstance Win32_Process -Filter "ProcessId=$($proc.Id)" -ErrorAction Stop
             $ownerResult = Invoke-CimMethod -InputObject $cim -MethodName GetOwnerSid -ErrorAction Stop
@@ -104,6 +118,27 @@ function Test-LiveApproval {
         return ($receipt.ApprovedByUser -is [bool] -and $receipt.ApprovedByUser -and $receipt.SensorValidatedForLive -is [bool] -and $receipt.SensorValidatedForLive -and $receipt.ConfigSha256 -eq (Get-FileHash -LiteralPath $ConfigPath -Algorithm SHA256).Hash)
     } catch { return $false }
 }
+function Test-ForcedShutdownApproval {
+    if (-not (Test-LiveApproval)) { return $false }
+    $setting = $config.PSObject.Properties['EnableForcedShutdown']
+    if ($null -eq $setting -or $setting.Value -isnot [bool] -or -not $setting.Value) { return $false }
+    $receiptPath = Join-Path $PSScriptRoot 'live-approval.json'
+    try {
+        $receipt = Get-Content -LiteralPath $receiptPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $permission = $receipt.PSObject.Properties['ForcedShutdownApproved']
+        return ($null -ne $permission -and $permission.Value -is [bool] -and $permission.Value)
+    } catch { return $false }
+}
+function Get-VerifiedCpuMaximum {
+    param([object]$Primary, [AllowNull()][object]$CpuSummary)
+    if ($null -eq $Primary -or -not $Primary.Healthy) { return $null }
+    $temperature=[double]$Primary.TemperatureC
+    if ($null -ne $CpuSummary -and $CpuSummary.AvailableCount -ge 1 -and $null -ne $CpuSummary.MaxC) {
+        $max=[double]$CpuSummary.MaxC
+        if ($max -ge $temperature -and $max -gt 0 -and $max -le 110) { $temperature=$max }
+    }
+    return $temperature
+}
 function Invoke-GuardIntent {
     param([object]$Decision, [object[]]$Candidates)
     if ($Decision.Intent -eq 'None') { return }
@@ -112,15 +147,30 @@ function Invoke-GuardIntent {
     if (-not $live) { return }
     # Re-read the producer immediately before every side effect. Invalid input cancels it.
     $fresh = Read-AidaSensor -SensorId $config.SensorId -AidaPath $config.AidaPath -MaxAgeSeconds $config.MaxAgeSeconds -Context $script:context
-    $again = Get-GuardDecision -Temperature $fresh.TemperatureC -SensorHealthy $fresh.Healthy -PreviousState $Decision.State -WarningC $config.WarningC -ResumeBelowC $config.ResumeBelowC -ShutdownC $config.ShutdownC
+    $freshSummary = if ($fresh.Healthy) { Read-GuardCpuTemperatureSummary -VerifiedSample $fresh } else { $null }
+    $verifiedMaximum = Get-VerifiedCpuMaximum -Primary $fresh -CpuSummary $freshSummary
+    $again = Get-GuardDecision -Temperature $verifiedMaximum -SensorHealthy $fresh.Healthy -PreviousState $Decision.State -WarningC $config.WarningC -ResumeBelowC $config.ResumeBelowC -ShutdownC $config.ShutdownC
     if ($Decision.Intent -eq 'Shutdown' -and $again.Intent -eq 'Shutdown' -and $config.EnableShutdown -is [bool] -and $config.EnableShutdown) {
         if ($script:lastActions.ContainsKey('shutdown') -and ($script:clock.Elapsed.TotalSeconds-$script:lastActions['shutdown']) -lt 60) { return }
         $script:lastActions['shutdown']=$script:clock.Elapsed.TotalSeconds
-        Write-GuardEvent 'OrderlyShutdownRequested' @{TemperatureC=$fresh.TemperatureC}
-        # Flag 1 is orderly shutdown; no force flag, no timeout implying forced closure.
-        $os = Get-CimInstance Win32_OperatingSystem
-        $result = Invoke-CimMethod -InputObject $os -MethodName Win32Shutdown -Arguments @{Flags=1;Reserved=0}
-        Write-GuardEvent 'OrderlyShutdownResult' @{ReturnValue=$result.ReturnValue}
+        $forceRequested = $null -ne $config.PSObject.Properties['EnableForcedShutdown'] -and
+            $config.EnableForcedShutdown -is [bool] -and $config.EnableForcedShutdown
+        if ($forceRequested) {
+            if (-not (Test-ForcedShutdownApproval)) {
+                Write-GuardEvent 'ForcedShutdownBlocked' @{Reason='SeparateExplicitApprovalMissing'}
+                return
+            }
+            Write-GuardEvent 'ForcedShutdownRequested' @{TemperatureC=$verifiedMaximum;Mode='ApprovedEmergency'}
+            # Explicitly user-approved emergency mode. Unsaved application data can be lost.
+            $shutdownPath = Join-Path $env:WINDIR 'System32\shutdown.exe'
+            & $shutdownPath /s /f /t 0
+            Write-GuardEvent 'ForcedShutdownCommandReturned' @{ExitCode=$LASTEXITCODE}
+        } else {
+            Write-GuardEvent 'OrderlyShutdownRequested' @{TemperatureC=$verifiedMaximum}
+            $os = Get-CimInstance Win32_OperatingSystem
+            $result = Invoke-CimMethod -InputObject $os -MethodName Win32Shutdown -Arguments @{Flags=1;Reserved=0}
+            Write-GuardEvent 'OrderlyShutdownResult' @{ReturnValue=$result.ReturnValue}
+        }
         return
     }
     if ($again.Intent -ne 'ReduceLoad' -or $config.EnableAppClose -isnot [bool] -or -not $config.EnableAppClose) { return }
@@ -128,7 +178,9 @@ function Invoke-GuardIntent {
         if (-not $item.Eligibility.Allowed) { continue }
         try {
             $fresh = Read-AidaSensor -SensorId $config.SensorId -AidaPath $config.AidaPath -MaxAgeSeconds $config.MaxAgeSeconds -Context $script:context
-            if (-not $fresh.Healthy -or $fresh.TemperatureC -lt $config.ResumeBelowC) { break }
+            $freshSummary = if ($fresh.Healthy) { Read-GuardCpuTemperatureSummary -VerifiedSample $fresh } else { $null }
+            $freshMax = Get-VerifiedCpuMaximum -Primary $fresh -CpuSummary $freshSummary
+            if ($null -eq $freshMax -or $freshMax -lt $config.ResumeBelowC) { break }
             $candidate = $item.Candidate
             $actionKey='{0}|{1}' -f $candidate.Pid,$candidate.StartTimeUtc
             if ($script:lastActions.ContainsKey($actionKey) -and ($script:clock.Elapsed.TotalSeconds-$script:lastActions[$actionKey]) -lt 60) { continue }
@@ -188,7 +240,8 @@ try {
             $script:lastCpuSummary=Read-GuardCpuTemperatureSummary -VerifiedSample $script:lastSample
             $candidates=@(Get-GuardCandidates)
         }
-        $decision=Get-GuardDecision -Temperature $script:lastSample.TemperatureC -SensorHealthy $script:lastSample.Healthy -PreviousState $script:state -WarningC $config.WarningC -ResumeBelowC $config.ResumeBelowC -ShutdownC $config.ShutdownC
+        $decisionTemperature=Get-VerifiedCpuMaximum -Primary $script:lastSample -CpuSummary $script:lastCpuSummary
+        $decision=Get-GuardDecision -Temperature $decisionTemperature -SensorHealthy $script:lastSample.Healthy -PreviousState $script:state -WarningC $config.WarningC -ResumeBelowC $config.ResumeBelowC -ShutdownC $config.ShutdownC
         $script:state=$decision.State; $script:lastDecision=$decision; $script:count++
         if ($previousState -ne $script:state -or $script:count -eq 1) { Write-GuardEvent 'StateChanged' @{From=$previousState;To=$script:state;TemperatureC=$script:lastSample.TemperatureC;Error=$script:lastSample.Error} }
         if ($script:state -ne 'Normal') { Show-GuardNotice $(if ($script:state -eq 'SensorFault') {'Нет достоверных данных CPU. Защитные действия заблокированы.'} else {"Температура CPU $($script:lastSample.TemperatureC) °C. Режим: $($config.Mode)."}) }
