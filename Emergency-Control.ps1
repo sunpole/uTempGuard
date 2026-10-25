@@ -55,11 +55,17 @@ if ($Action -eq 'Status') {
         }
     } catch { $armed = $false }
     $status = & $managerPath -Action Status
+    Import-Module (Join-Path $root 'src\Guard.TemperatureSources.psm1') -Force
+    $sourcePolicy=Get-GuardTemperaturePolicy -Path (Join-Path $dataPath 'temperature-sources.json')
+    $sourceApproved=Test-GuardActionSourceApproval -Policy $sourcePolicy -ReceiptPath (Join-Path $dataPath 'temperature-power-approval.json') -ConfigPath $configPath
+    $armed = ($armed -and $sourceApproved)
     [pscustomobject]@{
         ConfigurationMode=$config.Mode
         ForcedShutdownArmed=$armed
         MonitorRunning=($status.HeartbeatFresh -and $null -ne $status.Status -and $status.Status.Running)
         RunningMode=$(if($null -ne $status.Status){$status.Status.Mode}else{'Unknown'})
+        ShutdownSensorMode=$sourcePolicy.ShutdownMode
+        ShutdownSourceApproved=$sourceApproved
         ApprovedAppCount=@($config.AllowList | Where-Object { $_.Approved -eq $true }).Count
     }
     return
