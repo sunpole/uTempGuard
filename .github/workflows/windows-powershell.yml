@@ -14,14 +14,14 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $files = @('uTempGuard.ps1','Update-uTempGuard.ps1','src/Guard.Overlay.psm1','src/Guard.OverlayUI.ps1','tests/Preview-Overlay.ps1','tests/Test-OverlayDisplay.ps1','src/Guard.CpuSummary.psm1','tests/Test-UnattendedReadiness.ps1','Emergency-Control.ps1','src/Guard.Notices.psm1','src/Guard.TemperatureSources.psm1','src/Guard.SourceMenu.ps1','src/Guard.ModernMenu.ps1','src/Guard.TrayIconSelector.psm1','src/Guard.TrayIconUI.ps1','tests/Test-TrayIconSelector.ps1','src/Guard.Localization.psm1','tests/Test-Localization.ps1','tests/Test-ModernMenu.ps1','tests/Test-UpdaterNativeStderr.ps1','tests/Test-UpdaterUntracked.ps1','tests/Test-IconGallery.ps1','tests/Test-TemperatureSources.ps1','tests/Test-StartupNotices.ps1','tests/Invoke-OneShotRestartTest.ps1','tests/Test-OneShotRestartPreview.ps1')
+          $files = @('uTempGuard.ps1','Update-uTempGuard.ps1','src/Guard.Overlay.psm1','src/Guard.OverlayUI.ps1','tests/Preview-Overlay.ps1','tests/Test-OverlayDisplay.ps1','src/Guard.CpuSummary.psm1','tests/Test-UnattendedReadiness.ps1','Emergency-Control.ps1','src/Guard.Notices.psm1','src/Guard.TemperatureSources.psm1','src/Guard.SourceMenu.ps1','src/Guard.ModernMenu.ps1','src/Guard.TrayIconSelector.psm1','src/Guard.TrayIconUI.ps1','tests/Test-TrayIconSelector.ps1','src/Guard.Localization.psm1','tests/Test-Localization.ps1','tests/Test-ModernMenu.ps1','tests/Test-UpdaterNativeStderr.ps1','tests/Test-UpdaterUntracked.ps1','tests/Test-IconGallery.ps1','Setup-uTempGuard.ps1','tools/Build-Distribution.ps1','tests/Test-Distribution.ps1','tests/Test-TemperatureSources.ps1','tests/Test-StartupNotices.ps1','tests/Invoke-OneShotRestartTest.ps1','tests/Test-OneShotRestartPreview.ps1')
           foreach ($file in $files) {
             $tokens = $null
             $errorsFound = $null
             [void][System.Management.Automation.Language.Parser]::ParseFile((Join-Path $pwd $file), [ref]$tokens, [ref]$errorsFound)
             if ($errorsFound) { throw "PowerShell parse failed: $file ($($errorsFound -join '; '))" }
           }
-          foreach ($test in @('Test-Core.ps1','Test-Sensor.ps1','Test-Management.ps1','Test-ActionGuards.ps1','Test-Overlay.ps1','Test-OverlayDisplay.ps1','Test-CpuSummary.ps1','Test-OneShotRestartPreview.ps1','Test-StartupNotices.ps1','Test-TemperatureSources.ps1','Test-ModernMenu.ps1','Test-TrayIconSelector.ps1','Test-Localization.ps1','Test-UpdaterNativeStderr.ps1','Test-UpdaterUntracked.ps1','Test-IconGallery.ps1')) {
+          foreach ($test in @('Test-Core.ps1','Test-Sensor.ps1','Test-Management.ps1','Test-ActionGuards.ps1','Test-Overlay.ps1','Test-OverlayDisplay.ps1','Test-CpuSummary.ps1','Test-OneShotRestartPreview.ps1','Test-StartupNotices.ps1','Test-TemperatureSources.ps1','Test-ModernMenu.ps1','Test-TrayIconSelector.ps1','Test-Localization.ps1','Test-UpdaterNativeStderr.ps1','Test-UpdaterUntracked.ps1','Test-IconGallery.ps1','Test-Distribution.ps1')) {
             & "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path 'tests' $test)
             if ($LASTEXITCODE -ne 0) { throw "Failed: $test" }
           }
