@@ -42,6 +42,10 @@ Copy-Item -LiteralPath $source -Destination $copy
 $beforePath=$env:PATH
 $env:PATH=$bin+';'+$beforePath
 $env:UTG_TEST_ROOT=$folder
+$previousErrorActionPreference=$ErrorActionPreference
+# PS5.1 treats expected stderr from intentionally failing child processes
+# as NativeCommandError under Stop; capture it without aborting the test.
+$ErrorActionPreference='Continue'
 try{
   $env:UTG_TEST_TRACKED='clean'
   $env:UTG_TEST_UPSTREAM='same'
@@ -64,6 +68,7 @@ try{
   }
   Write-Output 'PASS: untracked files preserved; modified tracked files and collisions safely block updater.'
 }finally{
+  $ErrorActionPreference=$previousErrorActionPreference
   $env:PATH=$beforePath
   foreach($key in @('UTG_TEST_ROOT','UTG_TEST_TRACKED','UTG_TEST_UPSTREAM','UTG_TEST_COLLISION')){
     Remove-Item ('Env:'+$key) -ErrorAction SilentlyContinue
