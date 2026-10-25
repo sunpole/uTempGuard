@@ -23,6 +23,7 @@ def build(source: Path, destination: Path) -> int:
 
     icons = sorted(source.glob("utg_*.svg"))
     expected_names = [p for p in icons if ICON.fullmatch(p.stem)]
+    destination.mkdir(parents=True, exist_ok=True)
     if not expected_names:
         print(f"No user SVG icon frames yet in {source}; keeping fallback official logo.")
         return 0
