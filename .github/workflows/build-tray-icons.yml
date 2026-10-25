@@ -5,6 +5,8 @@ on:
     paths:
       - 'assets/logo/*.svg'
       - 'tools/build-tray-icons.py'
+      - 'tools/test-build-tray-icons.py'
+      - '.github/workflows/build-tray-icons.yml'
   workflow_dispatch:
 permissions:
   contents: write
@@ -32,7 +34,7 @@ jobs:
           root=Path('assets/tray-icons')
           files=list(root.glob('utg_*.png.base64')) if root.exists() else []
           for file in files:
-              payload=base64.b64decode(file.read_text(encoding='ascii'), validate=True)
+              payload=base64.b64decode(file.read_text(encoding='ascii').strip(), validate=True)
               assert payload.startswith(b'\x89PNG\r\n\x1a\n'), file.name
           print(f'Validated {len(files)} 64px frames.')
           PY

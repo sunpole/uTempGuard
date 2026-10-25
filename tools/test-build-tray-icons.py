@@ -24,7 +24,7 @@ with tempfile.TemporaryDirectory(prefix="utg-render-test-") as location:
     if count != 1:
         raise AssertionError(f"Expected 1 frame, got {count}")
     raster = destination / "utg_w_000.png.base64"
-    png = base64.b64decode(raster.read_text(encoding="ascii"), validate=True)
+    png = base64.b64decode(raster.read_text(encoding="ascii").strip(), validate=True)
     with Image.open(BytesIO(png)) as img:
         if img.size != (64, 64) or img.mode not in {"RGBA", "RGB"}:
             raise AssertionError(f"Wrong output size or colorspace: {img.size}, {img.mode}")
