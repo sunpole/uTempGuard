@@ -125,6 +125,7 @@
     "dashboard.noReading": "Нет достоверных данных",
     "dashboard.approved": "Разрешено · Live",
     "dashboard.notApproved": "Не разрешено · Observe / нет допуска",
-    "home.dashboard": "Главное окно ↗"
+    "home.dashboard": "Главное окно ↗",
+    "dashboard.sensorBlocked": "Датчики недостоверны · действия блокированы"
   }
 }
