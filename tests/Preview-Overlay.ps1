@@ -21,7 +21,10 @@ $SimulationPath='UI-only preview'
 $config=[pscustomobject]@{
     Mode='Observe'
     Overlay=[pscustomobject]@{Enabled=$true; MarginX=20; MarginY=20}
+    WarningC=70
+    ShutdownC=75
 }
+$script:lastCpuSummary=$null
 $script:lastSample=[pscustomobject]@{
     Healthy= (-not $SensorFault)
     TemperatureC= $(if ($SensorFault) { $null } else { $TemperatureC })

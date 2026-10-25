@@ -11,6 +11,7 @@ Set-StrictMode -Version 2.0
 if ([string]::IsNullOrWhiteSpace($ConfigPath)) { $ConfigPath=Join-Path $PSScriptRoot 'config.json' }
 Import-Module (Join-Path $PSScriptRoot 'src\Guard.Core.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'src\Guard.Sensor.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'src\Guard.CpuSummary.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'src\Guard.Overlay.psm1') -Force
 $DataDirectory = [IO.Path]::GetFullPath($DataDirectory).TrimEnd('\')
 [IO.Directory]::CreateDirectory($DataDirectory) | Out-Null
@@ -27,6 +28,7 @@ $script:clock = [Diagnostics.Stopwatch]::StartNew()
 $script:context = @{}
 $script:state = 'Normal'
 $script:lastSample = $null
+$script:lastCpuSummary = $null
 $script:lastDecision = $null
 $script:overlaySettingsPath = Join-Path $DataDirectory 'overlay.json'
 $script:overlaySettings = $null
@@ -180,8 +182,10 @@ try {
             $sim=$simulation[$script:count]
             $script:lastSample=[pscustomobject]@{Healthy=[bool]$sim.Healthy;TemperatureC=$sim.TemperatureC;Error=$sim.Error;SensorId=$config.SensorId;Source='Simulation';Heartbeat='simulation'}
             $candidates=@()
+            $script:lastCpuSummary=$null
         } else {
             $script:lastSample=Read-AidaSensor -SensorId $config.SensorId -AidaPath $config.AidaPath -MaxAgeSeconds $config.MaxAgeSeconds -Context $script:context
+            $script:lastCpuSummary=Read-GuardCpuTemperatureSummary -VerifiedSample $script:lastSample
             $candidates=@(Get-GuardCandidates)
         }
         $decision=Get-GuardDecision -Temperature $script:lastSample.TemperatureC -SensorHealthy $script:lastSample.Healthy -PreviousState $script:state -WarningC $config.WarningC -ResumeBelowC $config.ResumeBelowC -ShutdownC $config.ShutdownC
@@ -189,7 +193,7 @@ try {
         if ($previousState -ne $script:state -or $script:count -eq 1) { Write-GuardEvent 'StateChanged' @{From=$previousState;To=$script:state;TemperatureC=$script:lastSample.TemperatureC;Error=$script:lastSample.Error} }
         if ($script:state -ne 'Normal') { Show-GuardNotice $(if ($script:state -eq 'SensorFault') {'Нет достоверных данных CPU. Защитные действия заблокированы.'} else {"Температура CPU $($script:lastSample.TemperatureC) °C. Режим: $($config.Mode)."}) }
         Invoke-GuardIntent -Decision $decision -Candidates $candidates
-        Update-GuardDisplay -Sample $script:lastSample -Decision $decision
+        Update-GuardDisplay -Sample $script:lastSample -Decision $decision -CpuSummary $script:lastCpuSummary
         Write-GuardStatus -IsRunning $true -State $script:state -Sample $script:lastSample
         if ($script:count % 30 -eq 0) { Write-GuardEvent 'Sample' $script:lastSample }
         if ($MaxSamples -gt 0 -and $script:count -ge $MaxSamples) { break }
