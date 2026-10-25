@@ -40,7 +40,7 @@ $script:git=$exe
 $script:root=$folder
 $success=@(Invoke-LocalGit -Arguments @('fetch'))
 if($success -notcontains 'FetchComplete'){throw 'Successful Git command did not return stdout'}
-if($success -notmatch 'From https://github.com/sunpole/uTempGuard'){throw 'Stderr did not reach diagnostic output'}
+if(@($success | Where-Object { $_ -match 'From https://github.com/sunpole/uTempGuard' }).Count -eq 0){throw 'Stderr did not reach diagnostic output'}
 if($ErrorActionPreference -ne 'Stop'){throw 'Global error policy changed by Git wrapper'}
 $failed=$false
 try {
