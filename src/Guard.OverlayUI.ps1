@@ -135,7 +135,8 @@ function Initialize-GuardOverlay {
     $script:menuVisible=$menu.Items.Add('Показать индикатор')
     $script:menuVisible.add_Click({ Set-GuardOverlayPreference -Name 'Visible' -Value (-not $script:overlaySettings.Visible) })
     $menu.Items.Add('-') | Out-Null
-    $stopItem=$menu.Items.Add('Остановить uTempGuard')
+    $stopLabel = if ($script:overlayPreview) { 'Закрыть предпросмотр' } else { 'Остановить uTempGuard' }
+    $stopItem=$menu.Items.Add($stopLabel)
     $stopItem.add_Click({ [IO.File]::WriteAllText($stopPath,'stop') })
 
     $script:form.ContextMenuStrip=$menu
