@@ -108,6 +108,23 @@
     "home.about": "About ›",
     "gallery.open": "Icons · 28 SVG gallery ↗",
     "gallery.edit": "Preview 32px, themes and blinking",
-    "about.logoLink": "Official SVG ↗"
+    "about.logoLink": "Official SVG ↗",
+    "dashboard.subtitle": "Temperature monitoring · System protection",
+    "dashboard.temperature": "DISPLAY TEMPERATURE",
+    "dashboard.sensors": "VERIFIED CPU SENSORS",
+    "dashboard.monitor": "MONITOR STATUS",
+    "dashboard.safety": "EMERGENCY SHUTDOWN",
+    "dashboard.display": "◈  Display sensor selection",
+    "dashboard.shutdown": "♢  Shutdown sensor selection",
+    "dashboard.appearance": "◉  Appearance and indicator",
+    "dashboard.language": "◎  Interface language",
+    "dashboard.gallery": "▦  Gallery of all 28 SVGs",
+    "dashboard.updates": "↻  Check for updates",
+    "dashboard.refresh": "⟳  Refresh readings",
+    "dashboard.footer": "Double-click — dashboard · Right-click — menu · Esc — hide",
+    "dashboard.noReading": "No verified sensor data",
+    "dashboard.approved": "Approved · Live",
+    "dashboard.notApproved": "Not approved · Observe / approval missing",
+    "home.dashboard": "Main window ↗"
   }
 }
