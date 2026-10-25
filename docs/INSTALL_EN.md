@@ -14,7 +14,7 @@ Windows 10/11, Windows PowerShell 5.1 and WinForms. **AIDA64 must be installed a
 4. Enter the absolute path to a **digitally signed FinalWire aida64.exe**. Setup verifies its location and publisher signature.
 5. The wizard creates `config.json` **only in Observe mode**. This means no shutdown and no application closing.
 6. Type **INSTALL** only if you approve a current-user Startup shortcut and starting the monitor immediately. Declining leaves the prepared Observe-only config, but performs no Startup changes.
-7. Wait for valid AIDA64 sensor export, then right-click uTempGuard's system-tray icon.
+7. Wait for valid AIDA64 sensor export. Double-click the tray icon or `Open-uTempGuard.cmd` for the full dashboard; right-click for the compact menu. Closing the dashboard does not stop monitoring.
 
 No Python, Node.js or WebView2 installation is required.
 
