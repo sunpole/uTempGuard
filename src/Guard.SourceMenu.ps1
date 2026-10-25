@@ -44,7 +44,7 @@ function Set-GuardSourceChoice {
         if($Id -cnotmatch '^T[A-Z0-9-]{1,31}$'){return}
         if($null -eq $script:lastTemperatureCatalog -or -not $script:lastTemperatureCatalog.Healthy){return}
         if(@($script:lastTemperatureCatalog.Sensors|Where-Object {$_.Id -ceq $Id}).Count -ne 1){return}
-    } elseif($Mode -notin @('All','Cores','CoresCpu','CoresCpuPackage')){return}
+    } elseif($Mode -notin @('LegacyCpu','All','Cores','CoresCpu','CoresCpuPackage')){return}
     if($Role -eq 'Shutdown'){
         $msg='Выбор нового датчика отключит предыдущий допуск к выключению. Для новых датчиков потребуется отдельное подтверждение. Продолжить?'
         $ans=[Windows.Forms.MessageBox]::Show($msg,'uTempGuard: датчики выключения',[Windows.Forms.MessageBoxButtons]::YesNo,[Windows.Forms.MessageBoxIcon]::Warning)
@@ -144,6 +144,11 @@ function Initialize-GuardSourceMenus {
         $custom.Tag=@{Role=$role;Mode='Custom'}
         $custom.add_DropDownOpening({param($sender,$e) Show-GuardSourceChecks -MenuItem $sender})
         [void]$node.DropDownItems.Add($custom)
+        [void]$node.DropDownItems.Add('-')
+        $legacy=[Windows.Forms.ToolStripMenuItem]::new('↩ Вернуть прежний вариант: CPU Package + ядра')
+        $legacy.Tag=@{Role=$role;Mode='LegacyCpu'}
+        $legacy.add_Click({param($sender,$e) Set-GuardSourceChoice -Role ([string]$sender.Tag.Role) -Mode 'LegacyCpu'})
+        [void]$node.DropDownItems.Add($legacy)
         if($role -eq 'Shutdown'){
             [void]$node.DropDownItems.Add('-')
             $script:sourceApproveItem=[Windows.Forms.ToolStripMenuItem]::new('Подтвердить выбранные датчики…')
