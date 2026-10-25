@@ -104,6 +104,7 @@
     "fallback.powerMode": "Датчики для отключения",
     "fallback.showMode": "Датчики для показа",
     "fallback.sourceConfirm": "Подтвердить датчики…",
-    "fallback.sensorWaiting": "Ожидание AIDA64"
+    "fallback.sensorWaiting": "Ожидание AIDA64",
+    "home.about": "О программе ›"
   }
 }
