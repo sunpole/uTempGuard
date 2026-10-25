@@ -6,7 +6,7 @@ Import-Module (Join-Path $root 'src\Guard.Core.psm1') -Force
 $tokens=$null;$parseErrors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $root 'uTempGuard.ps1'),[ref]$tokens,[ref]$parseErrors)
 if($parseErrors){throw 'Runtime parser errors'}
-foreach($name in @('Test-LiveApproval','Invoke-GuardIntent')) {
+foreach($name in @('Test-LiveApproval','Test-ForcedShutdownApproval','Get-VerifiedCpuMaximum','Invoke-GuardIntent')) {
     $definition=$ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name},$true)
     if(-not $definition){throw "Missing runtime function $name"}
     # AST extraction has no file-bound PSScriptRoot; bind that path seam to the actual runtime folder.
@@ -23,9 +23,12 @@ $script:boundaryCalls=0
 function Write-GuardEvent { param($Event,$Details) $script:events+=@{Event=$Event;Details=$Details} }
 function Invoke-CimMethod { $script:boundaryCalls++; throw 'Forbidden real action boundary reached in test' }
 function Get-Process { $script:boundaryCalls++; throw 'Forbidden process action boundary reached in test' }
+function Read-GuardCpuTemperatureSummary { return $null }
 $checks=0
 if(Test-LiveApproval){throw 'Observe admitted execution'};$checks++
 $config.Mode='Live'
+$config | Add-Member -NotePropertyName EnableForcedShutdown -NotePropertyValue $true
+if(Test-ForcedShutdownApproval){throw 'Unapproved forced shutdown admitted execution'};$checks++
 if(Test-Path -LiteralPath (Join-Path $root 'live-approval.json')){throw 'Tests require the unapproved project: remove no file automatically; stop and inspect approval.'}
 if(Test-LiveApproval){throw 'Missing approval admitted execution'};$checks++
 $SimulationPath='synthetic-scenario'
@@ -43,6 +46,12 @@ if($script:boundaryCalls -ne 0){throw 'Stale sensor allowed shutdown'};$checks++
 Invoke-GuardIntent -Decision ([pscustomobject]@{Intent='ReduceLoad';State='Warning';Temperature=71}) -Candidates @()
 if($script:boundaryCalls -ne 0){throw 'Stale sensor allowed application close'};$checks++
 function Read-AidaSensor { [pscustomobject]@{Healthy=$true;TemperatureC=68;Error=''} }
+$healthy=[pscustomobject]@{Healthy=$true;TemperatureC=43}
+$summary=[pscustomobject]@{AvailableCount=3;MaxC=75}
+if((Get-VerifiedCpuMaximum -Primary $healthy -CpuSummary $summary) -ne 75){throw 'Validated maximum core temperature not used'}
+$summary.MaxC=999
+if((Get-VerifiedCpuMaximum -Primary $healthy -CpuSummary $summary) -ne 43){throw 'Invalid maximum promoted'}
+$checks+=2
 Invoke-GuardIntent -Decision ([pscustomobject]@{Intent='Shutdown';State='Critical';Temperature=80}) -Candidates @()
 if($script:boundaryCalls -ne 0){throw 'Cooled sensor allowed shutdown'};$checks++
 $report=[ordered]@{Passed=$true;Assertions=$checks;RealActionBoundaryCalls=$script:boundaryCalls;ApprovalFileCreated=$false;CheckedUtc=[datetime]::UtcNow.ToString('o')}
